@@ -1,0 +1,6 @@
+versionLog
+
+9/26/2016
+2.05	1) cursor movement shows both x, y coordinates
+	2) the coordinates stay for 2 seconds
+	3) Beep() when left control key is pressed was causing the app to crash/hang in Windows 7. Now it is removed.
