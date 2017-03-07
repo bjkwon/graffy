@@ -81,9 +81,9 @@ public:
 	CAxis * CurrentPoint2CurrentAxis (Win32xx::CPoint *point);
 	CString errStr;
 	CAxis * gca;
-	CMenu * subMenu;
+	CMenu subMenu;
 	CMenu menu;
-	CSignal sig;
+	unsigned char opacity;
 	int devID;
 	int zoom;
 	double block; // Duration in milliseconds of playback buffer. Set to make the playback progress line advance by 3 pixels
@@ -95,10 +95,11 @@ public:
 	CRect DrawAxis(CDC *pDC, PAINTSTRUCT *ps, CAxis *pax);
 	void UpdateRects(CAxis *ax);
 	unsigned short GetMousePos(CPoint pt);
-	CFigure *gcf;
-	int edge;
+	CFigure gcf;
+	RANGE_PX edge;
 	HACCEL GetAccel();
-	CPlotDlg(const CSignals &data, HINSTANCE hInstance, CGobj *hPar = NULL);   // standard constructor
+	CPlotDlg(); 
+	CPlotDlg(HINSTANCE hInstance, CGobj *hPar = NULL);   // standard constructor
 	~CPlotDlg();
 private:
 	bool spgram;
@@ -112,7 +113,8 @@ private:
 	CPoint lastPtDrawn;
 	HWND hStatusbar;
 	CPoint mov0; // used for WM_MOUSEMOVE
-	CPoint lastpoint; // used for WM_MOUSEMOVE
+	CPoint lbuttondownpoint; 
+	CPoint lastpoint; // used in WM_MOUSEMOVE
 	CRect lastrect; // used for WM_MOUSEMOVE
 	double spaxposlimx, spaxposlimy; // used for WM_MOUSEMOVE
 	CPosition lastPos;
@@ -127,6 +129,7 @@ private:
 	TOOLINFO ti_script, ti_taxis;
 	CBrush hQuickSolidBrush;
 	RANGE_PX curRange;
+	vector<string> ttstat;
 public:
 	RANGE_TP selRange;
 	void OnPaint();

@@ -4,3 +4,8 @@ versionLog
 2.05	1) cursor movement shows both x, y coordinates
 	2) the coordinates stay for 2 seconds
 	3) Beep() when left control key is pressed was causing the app to crash/hang in Windows 7. Now it is removed.
+
+11/4/2016
+2.10
+Now IDD_PLOT dialog has Topmost ON. --> This resolves **the z-order confusion problem in Windows 7.
+(** When multiple IDD_PLOT dialogs are generated, the last generated one hide in the background even when it is clicked and activated.

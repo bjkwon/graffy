@@ -63,7 +63,7 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 2,0,5,0
+ FILEVERSION 2,1,0,0
  PRODUCTVERSION 1,0,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
@@ -80,7 +80,7 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", "Auditory Professional, Inc"
-            VALUE "FileVersion", "2.0.5.0"
+            VALUE "FileVersion", "2.1.0.0"
             VALUE "InternalName", "graffy"
             VALUE "LegalCopyright", "Copyright (C) 2016"
             VALUE "ProductName", "graffy Dynamic Link Library"
@@ -101,6 +101,7 @@ END
 
 IDD_PLOT DIALOGEX 0, 0, 234, 156
 STYLE DS_SETFONT | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME
+EXSTYLE WS_EX_LAYERED
 CAPTION "Figure "
 FONT 8, "MS Sans Serif", 0, 0, 0x0
 BEGIN
@@ -162,6 +163,7 @@ BEGIN
             MENUITEM "Right Ste&p (R arrow)",       IDM_RIGHT_STEP
         END
         MENUITEM "&Full View [keypad *]",       IDM_FULLVIEW
+        MENUITEM "&Transparency",       IDM_TRANSPARENCY
         MENUITEM SEPARATOR
         MENUITEM "&Play [space bar]",           IDM_PLAY
         MENUITEM "&Save As [keypad /]",         IDM_WAVWRITE

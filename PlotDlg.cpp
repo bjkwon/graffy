@@ -27,17 +27,41 @@ CPosition SpecAxPos(.75, .6, .22, .35);
 
 CAstSig needcomp;
 
-char *ttstat[] ={"begin time(screen)", "end time (screen)", "dB RMS (screen)", "", "Current cursor", "", "begin time (selection)", "end time(selection)", "dB RMS (selection)", "", "Frequency"};
-
 FILE *fp;
 
 #define RMSDB(BUF,FORMAT1,FORMAT2,X) { double rms;	if ((rms=X)==-1.*std::numeric_limits<double>::infinity()) strcpy(BUF, FORMAT1); else sprintf(BUF, FORMAT2, rms); }
 
-CPlotDlg::CPlotDlg(const CSignals &data, HINSTANCE hInstance, CGobj *hPar)
+CPlotDlg::CPlotDlg()
 :axis_expanding(false), levelView(false), playing(false), paused(false), ClickOn(0), MoveOn(0), devID(0), playLoc(-1), zoom(0), spgram(false), selColor(RGB(150, 180, 155)), hStatusbar(NULL)
 {
-	sig = data;
-	gcf = new CFigure(this, hPar);
+	menu.LoadMenu(IDR_POPMENU);
+	subMenu = menu.GetSubMenu(0);
+	gcmp=CPoint(-1,-1);
+	z0pt=CPoint(-1,-1);
+	hAccel = LoadAccelerators(hInst, MAKEINTRESOURCE(IDR_ACCELERATOR));
+	for (int k(0); k<10; k++) hTTtimeax[k]=NULL;
+	ttstat.push_back("begin time(screen)");
+	ttstat.push_back("end time(screen)");
+	ttstat.push_back("dB RMS (screen)");
+	ttstat.push_back(" ()");
+	ttstat.push_back("X Cursor");
+	ttstat.push_back(" ()");
+	ttstat.push_back("begin time(selection)");
+	ttstat.push_back("end time(selection)");
+	ttstat.push_back("dB RMS (selection)");
+	ttstat.push_back(" ()");
+	ttstat.push_back("Frequency");
+}
+
+CPlotDlg::CPlotDlg(HINSTANCE hInstance, CGobj *hPar)
+:axis_expanding(false), levelView(false), playing(false), paused(false), ClickOn(0), MoveOn(0), devID(0), playLoc(-1), zoom(0), spgram(false), selColor(RGB(150, 180, 155)), hStatusbar(NULL)
+{
+	opacity = 0xff;
+
+	gcf.m_dlg = this;
+	gcf.hPar = hPar;
+	gcf.hPar->child.push_back(&gcf);
+
 	menu.LoadMenu(IDR_POPMENU);
 	subMenu = menu.GetSubMenu(0);
 	gcmp=CPoint(-1,-1);
@@ -45,26 +69,39 @@ CPlotDlg::CPlotDlg(const CSignals &data, HINSTANCE hInstance, CGobj *hPar)
 	hInst = hInstance;
 	hAccel = LoadAccelerators(hInst, MAKEINTRESOURCE(IDR_ACCELERATOR));
 	for (int k(0); k<10; k++) hTTtimeax[k]=NULL;
+	ttstat.push_back("begin time(screen)");
+	ttstat.push_back("end time(screen)");
+	ttstat.push_back("dB RMS (screen)");
+	ttstat.push_back(" ()");
+	ttstat.push_back("X Cursor");
+	ttstat.push_back(" ()");
+	ttstat.push_back("begin time(selection)");
+	ttstat.push_back("end time(selection)");
+	ttstat.push_back("dB RMS (selection)");
+	ttstat.push_back(" ()");
+	ttstat.push_back("Frequency");
 }
 
 CPlotDlg::~CPlotDlg()
 {
-
 }
 
 void CPlotDlg::OnDestroy()
 {
-	//Don't delete this. When you need it next time, you would hate having deleted it.
+	//Don't "delete this" here
+	DestroyWindow();
 }
 
 void CPlotDlg::OnClose()
 {
 	// Instead of calling DestroyWindow(), post the message to message loop (either in Auxtra.cpp or plotThread.cpp) and properly delete the figure (and reduce theApp.nFigures by 1)
-	PostMessage(WM_DESTROY);
+//	PostMessage(WM_DESTROY);
+	PostMessage(WM_QUIT);
+	for (size_t k=0; k<gcf.ax.size(); k++)
+		deleteObj(gcf.ax[k]); 
+	for (size_t k=0; k<gcf.text.size(); k++)
+		deleteObj(gcf.text[k]);
 }
-
-/////////////////////////////////////////////////////////////////////////////
-// CPlotDlg message handlers
 
 HACCEL CPlotDlg::GetAccel()
 {
@@ -73,9 +110,7 @@ HACCEL CPlotDlg::GetAccel()
 
 HWND CPlotDlg::CreateTT(HWND hPar, TOOLINFO *tinfo)
 {
-    HWND TT; 
-
-    TT = ::CreateWindowEx(WS_EX_TOPMOST, TOOLTIPS_CLASS, NULL,
+    HWND TT = ::CreateWindowEx(WS_EX_TOPMOST, TOOLTIPS_CLASS, NULL,
         WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,        
 		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
         hPar, NULL, hInst, NULL);
@@ -99,6 +134,7 @@ HWND CPlotDlg::CreateTT(HWND hPar, TOOLINFO *tinfo)
 
 BOOL CPlotDlg::OnInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 {
+	SetLayeredWindowAttributes(hwnd, 0, opacity, LWA_ALPHA); // how can I transport transparency from application? Let's think about it tomorrow 1/6/2017 12:19am
 	hTTscript = CreateTT(hwnd, &ti_script);
     GetClientRect (hwnd, &ti_script.rect);
 	ti_script.rect.bottom = ti_script.rect.top + 30;
@@ -119,10 +155,17 @@ void CPlotDlg::OnCommand(int idc, HWND hwndCtl, UINT event)
 	case IDM_ZOOM_OUT:
 	case IDM_LEFT_STEP:
 	case IDM_RIGHT_STEP:
+	case IDM_TRANSPARENCY:
+#ifndef NO_PLAYSND
 	case IDM_PLAY:
 	case IDM_STOP:
+#endif
+#ifndef NO_FFTW
 	case IDM_SPECTRUM:
+#endif
+#ifndef NO_SF
 	case IDM_WAVWRITE:
+#endif
 	case IDM_SPECTROGRAM:
 	case IDM_ZOOMSELECT:
 		OnMenu(idc);
@@ -135,7 +178,7 @@ void CPlotDlg::GetSignalIndicesofInterest(int code, int & ind1, int &ind2)
  // if not selected, ind1 and ind2 are the indices of the screen viewing range
  // Assumption: the signal is audio without chain
 	
-	CAxis *pax(gcf->ax.front());
+	CAxis *pax(gcf.ax.front());
 	int fs = pax->m_ln[0]->sig.GetFs();
 	if (code) 
 	{
@@ -152,9 +195,9 @@ void CPlotDlg::GetSignalIndicesofInterest(int code, int & ind1, int &ind2)
 POINT CPlotDlg::GetIndDisplayed(CAxis *pax)
 { // This returns the indices (x for begin and y for end) of the "main" signal first axis, m_ln[0].sig	currently displayed on the screen (based on current xlim)
 	POINT out = {0,0};
-	if (gcf->ax.size()==0) return out;
-	if (gcf->ax.front()->m_ln.size()==0) return out;
-	if (gcf->ax.front()->xlim[0]>=pax->xlim[1]) return out;
+	if (gcf.ax.size()==0) return out;
+	if (gcf.ax.front()->m_ln.size()==0) return out;
+	if (gcf.ax.front()->xlim[0]>=pax->xlim[1]) return out;
 	CSignal *p = &pax->m_ln.front()->sig;
 	int fs = p->GetFs();
 	if (p->GetType()==CSIG_AUDIO)
@@ -217,7 +260,7 @@ vector<POINT>  CPlotDlg::makeDrawVector(CSignal *p, CAxis *pax)
 
 	(p->tmark<=pax->xlim[0]*1000.) ?  beginID = (int)((pax->xlim[0]-p->tmark/1000.)*(double)fs +.5) : beginID = 0;
 	int estimatedNSamples = (int)((pax->xlim[1]-pax->xlim[0])*(double)fs);
-	if (gcf->ax.size()==2 && pax->m_ln.front()->sig.GetType()==CSIG_VECTOR) 
+	if (gcf.ax.size()==2 && pax->m_ln.front()->sig.GetType()==CSIG_VECTOR) 
 		estimatedNSamples=0; // For FFT, go to full drawing preemptively...
 	double remnant(0);
 	int adder;
@@ -338,25 +381,24 @@ void CPlotDlg::OnPaint()
 	HDC hdc = BeginPaint(hDlg, &ps);
 	if (hdc==NULL) { EndPaint(hDlg, &ps); return; }
 	CDC dc(hdc, hDlg);
-	CPen pen;
+	CClientDC dc2(hDlg);
 	CPoint pt;
 	int nDrawPt;
 	vector<POINT> draw;
 	char buf[512], buf2[512];
-	Win32xx::CRect clientRt;
+	CRect clientRt;
 	double xlims[2];
 	double maax(-1.e100), miin(1.e100);
-	int fs;
 	GetClientRect(hDlg, &clientRt);
 	if (clientRt.Height()<15) { EndPaint(hDlg, &ps); return; }
-	dc.SolidFill(gcf->color, clientRt);
-	if (gcf->ax.size()>0)
+	dc.SolidFill(gcf.color, clientRt);
+	if (gcf.ax.size()>0)
 	{
-		CAxis *pax0 = gcf->ax.front();
-		size_t nAxes = gcf->ax.size(); // just FYI
+		CAxis *pax0 = gcf.ax.front();
+		size_t nAxes = gcf.ax.size(); // just FYI
 		int nax(1);
 		// drawing lines
-		for (vector<CAxis*>::iterator paxit=gcf->ax.begin(); paxit!=gcf->ax.end(); paxit++, nax++) 
+		for (vector<CAxis*>::iterator paxit=gcf.ax.begin(); paxit!=gcf.ax.end(); paxit++, nax++) 
 		{
 			if (!(*paxit)->visible) continue;
 			if (!axis_expanding)
@@ -369,14 +411,14 @@ void CPlotDlg::OnPaint()
 			(*paxit)->rcAx=DrawAxis(&dc, &ps, *paxit);
 			size_t nLines = (*paxit)->m_ln.size(); // just FYI
 			for (vector<CLine*>::iterator liit=(*paxit)->m_ln.begin(); liit!=(*paxit)->m_ln.end(); liit++)  {
-				if ((*liit)->lineStyle==LineStyle_solid)		pen.CreatePen(PS_SOLID, (*liit)->lineWidth, (*liit)->color);
-				else if ((*liit)->lineStyle==LineStyle_dash)	pen.CreatePen(PS_DASH, (*liit)->lineWidth, (*liit)->color);
-				else if ((*liit)->lineStyle==LineStyle_dot)		pen.CreatePen(PS_DOT, (*liit)->lineWidth, (*liit)->color);
-				else if ((*liit)->lineStyle==LineStyle_dashdot)	pen.CreatePen(PS_DASHDOT, (*liit)->lineWidth, (*liit)->color);
-				else	/* LineStyle_noline*/					pen.CreatePen(PS_NULL, 0, 0);
-				dc.SelectObject(&pen);
+				if ((*liit)->lineStyle==LineStyle_solid)		dc.CreatePen(PS_SOLID, (*liit)->lineWidth, (*liit)->color);
+				else if ((*liit)->lineStyle==LineStyle_dash)	dc.CreatePen(PS_DASH, (*liit)->lineWidth, (*liit)->color);
+				else if ((*liit)->lineStyle==LineStyle_dot)		dc.CreatePen(PS_DOT, (*liit)->lineWidth, (*liit)->color);
+				else if ((*liit)->lineStyle==LineStyle_dashdot)	dc.CreatePen(PS_DASHDOT, (*liit)->lineWidth, (*liit)->color);
+				else	/* LineStyle_noline*/					dc.CreatePen(PS_NULL, 0, 0);
+//				dc.SelectObject(&pen);
 				xlims[0] = miin;		xlims[1] = maax;
-				if ((*liit)->symbol!=0) buf[0] = (*liit)->symbol; buf[1] = 0;
+				if ((*liit)->symbol!=0) buf[0] = (*liit)->symbol, buf[1] = 0;
 				if ((*liit)->lineWidth>0)
 				{
 					for (CSignal *p = &((*liit)->sig); p ; p = p->chain)
@@ -406,51 +448,50 @@ void CPlotDlg::OnPaint()
 						}
 					}
 				}
-				pen.DeleteObject(); 
 				dc.SetBkColor((*paxit)->color);
 			} 
 			// add ticks and ticklabels
-			dc.SetBkColor(gcf->color);
+			dc.SetBkColor(gcf.color);
 			// For the very first call to onPaint, axRect is not known so settics is skipped, and need to set it here
 			// also when InvalidateRect(NULL) is called, always remake ticks
-			if ( (*paxit)->xtick.tics1.size()==0 || CRect(ps.rcPaint) == clientRt )
-				if ((*paxit)->m_ln.front()->sig.GetType()==CSIG_AUDIO)
-					(*paxit)->xtick.tics1 = makefixtick((*paxit)->xlim[0], (*paxit)->xlim[1], (*paxit)->GetDivCount('x', -1));
-				else
-					(*paxit)->setxticks();
-			if ((*paxit)->ytick.tics1.size()==0 )
-				(*paxit)->ytick.tics1 = makefixtick((*paxit)->ylim[0], (*paxit)->ylim[1], (*paxit)->GetDivCount('y', -1));
-			DrawTicks(&dc, *paxit, 0);
-
-			//x & y labels
-			dc.SetTextAlign(TA_RIGHT|TA_BOTTOM);
-			dc.SelectObject(&(*paxit)->xtick.font);
-			if (!gcf->ax.empty() && !gcf->ax.front()->m_ln.empty())
+			if ((*paxit)->m_ln.size() > 0)
 			{
-				if (IsSpectrumAxis(*paxit))
+				if ( (*paxit)->xtick.tics1.size()==0 || CRect(ps.rcPaint) == clientRt )
+					if ((*paxit)->m_ln.front()->sig.GetType()==CSIG_AUDIO)
+						(*paxit)->xtick.tics1 = makefixtick((*paxit)->xlim[0], (*paxit)->xlim[1], (*paxit)->GetDivCount('x', -1));
+					else
+						(*paxit)->setxticks();
+				if ((*paxit)->ytick.tics1.size()==0 || (*paxit)->ylim[1]-(*paxit)->ylim[0] >  ((*paxit)->ytick.tics1.back()-(*paxit)->ytick.tics1.front())*2 )
+					(*paxit)->ytick.tics1 = makefixtick((*paxit)->ylim[0], (*paxit)->ylim[1], (*paxit)->GetDivCount('y', -1));
+				DrawTicks(&dc, *paxit, 0);
+
+				//x & y labels
+				dc.SetTextAlign(TA_RIGHT|TA_BOTTOM);
+				if (!gcf.ax.empty() && !gcf.ax.front()->m_ln.empty())
 				{
-					dc.TextOut((*paxit)->axRect.right-3, (*paxit)->axRect.bottom, "Hz");
-					dc.TextOut((*paxit)->axRect.left-3, (*paxit)->axRect.top-1, "dB");
+					if (IsSpectrumAxis(*paxit))
+					{
+						dc.TextOut((*paxit)->axRect.right-3, (*paxit)->axRect.bottom, "Hz");
+						dc.TextOut((*paxit)->axRect.left-3, (*paxit)->axRect.top-1, "dB");
+					}
+					else if (*paxit==gcf.ax.front() && (*paxit)->m_ln.front()->sig.GetType()==CSIG_AUDIO)
+						dc.SetBkMode(TRANSPARENT), dc.TextOut((*paxit)->axRect.right-3, (*paxit)->axRect.bottom, "sec");
 				}
-				else if (*paxit==gcf->ax.front() && (*paxit)->m_ln.front()->sig.GetType()==CSIG_AUDIO)
-					dc.SetBkMode(TRANSPARENT), dc.TextOut((*paxit)->axRect.right-3, (*paxit)->axRect.bottom, "sec");
 			}
 		}
-		CAxis *paxx(gcf->ax.front()); 
+		CAxis *paxx(gcf.ax.front()); 
 		if (LRrange(&paxx->rcAx, playLoc, 'x')==0) 
 		{
-			pen.CreatePen(PS_SOLID, 1, RGB(204,77,0));
-			dc.SelectObject(&pen);
-			dc.MoveTo(playLoc, gcf->ax.front()->axRect.bottom);
-			dc.LineTo(playLoc, gcf->ax.front()->axRect.top); 
-			pen.DeleteObject();
+			dc.CreatePen(PS_SOLID, 1, RGB(204,77,0));
+			dc.MoveTo(playLoc, gcf.ax.front()->axRect.bottom);
+			dc.LineTo(playLoc, gcf.ax.front()->axRect.top); 
 			setpbprogln(playLoc);
 		}
-		fs = gcf->ax.front()->m_ln.front()->sig.GetFs();
+//		fs = gcf.ax.front()->m_ln.front()->sig.GetFs();
 		if (pax0->m_ln.size()>0)
 		{
 			//drawing text of window size, pixel count, etc
-			if (sig.GetType()==CSIG_AUDIO)
+			if (pax0->m_ln.front()->sig.GetType()==CSIG_AUDIO)
 			{
 				CSignals _sig;
 				if (GetCSignalsInRange(0, pax0, _sig, 0))
@@ -486,7 +527,7 @@ void CPlotDlg::OnPaint()
 		}
 	}
 	//Drawing texts
-	for (vector<CText*>::iterator txit=gcf->text.begin(); txit!=gcf->text.end(); txit++) { 
+	for (vector<CText*>::iterator txit=gcf.text.begin(); txit!=gcf.text.end(); txit++) { 
 		if ((*txit)->pos.x0>=0 && (*txit)->pos.y0>=0)
 		{
 			dc.SelectObject(&(*txit)->font);
@@ -513,7 +554,6 @@ void CPlotDlg::OnPaint()
 void CPlotDlg::DrawTicks(CDC *pDC, CAxis *pax, char xy)
 {
 	LOGFONT fnt;
-	CPen pen;
 	int loc;
 	double value;
 	int lastpt2Draw(-32767), cum(0);
@@ -562,7 +602,7 @@ void CPlotDlg::DrawTicks(CDC *pDC, CAxis *pax, char xy)
 			loc = min(pax->rcAx.right-1, loc);  //loc should not be the same as pax->rcAx.right (then the ticks would protrude right from the axis rectangle)
 			pDC->MoveTo(loc, pax->rcAx.bottom-1);
 			pDC->LineTo(loc, pax->rcAx.bottom-1 - pax->xtick.size); 
-			if (sig.GetType()==CSIG_AUDIO && !pax->xtick.format) 
+			if (pax->m_ln[0]->sig.GetType()==CSIG_AUDIO && !pax->xtick.format) 
 				strcpy(pax->xtick.format, "%4.2f"); // This is where two digits under decimal are drawn on the time axis.
 			if (pax->xtick.format[0]!=0)
 			{
@@ -582,7 +622,7 @@ void CPlotDlg::DrawTicks(CDC *pDC, CAxis *pax, char xy)
 		break;
 	case 'y':
 		pDC->SetTextAlign (TA_RIGHT);
-		fnt = pax->ytick.font.GetLogFont(); // check before and after here
+		fnt = pDC->GetLogFont(); 
 		step = pax->ytick.tics1[1]-pax->ytick.tics1.front();
 		scale = pow(10., ceil(log10(step)));
 		scalemant = log10(scale);
@@ -619,9 +659,7 @@ void CPlotDlg::DrawTicks(CDC *pDC, CAxis *pax, char xy)
 		break;
 	default:
 		if (pax->m_ln.size()==0) break; // so that it skips when FFT rountine doesn't produce output
-		pen.CreatePen(PS_SOLID, 1, pax->colorAxis);
-		pDC->SelectObject(&pax->xtick.font);
-		pDC->SelectObject(&pen);
+		pDC->CreatePen(PS_SOLID, 1, pax->colorAxis);
 		DrawTicks(pDC, pax, 'x');
 		DrawTicks(pDC, pax, 'y');
 		break;
@@ -631,33 +669,18 @@ void CPlotDlg::DrawTicks(CDC *pDC, CAxis *pax, char xy)
 CRect CPlotDlg::DrawAxis(CDC *pDC, PAINTSTRUCT *ps, CAxis *pax)
 {
 	unsigned int rr = GetDoubleClickTime();
-	CPen pen;
-	COLORREF orgCol;
 	CRect rt;
 	GetClientRect(hDlg, &rt);
-	CBrush mBr;
 	char buf1[64];
 	if (axis_expanding)
-		pen.CreatePen(PS_DOT, 1, pax->colorAxis), mBr.CreateHatchBrush(HS_BDIAGONAL, RGB(160, 170, 200));
+		pDC->CreatePen(PS_DOT, 1, pax->colorAxis), pDC->CreateHatchBrush(HS_BDIAGONAL, RGB(160, 170, 200));
 	else
-		pen.CreatePen(PS_SOLID, 1, pax->colorAxis), mBr.CreateSolidBrush(pax->color);
-	pDC->SelectObject(&pen);
-	pDC->SelectObject(&mBr);
-	orgCol = pDC->GetBkColor();
+		pDC->CreatePen(PS_SOLID, 1, pax->colorAxis), pDC->CreateSolidBrush(pax->color);
 	CRect rt3(pax->pos.GetRect(rt));
 	LONG temp = rt3.bottom;
 	rt3.bottom = rt3.top;
 	rt3.top = temp;
 	pDC->Rectangle(rt3);
-	if (curRange != NO_SELECTION && (gcf->ax.size()==1 || pax != gcf->ax[1]) )
-	{ // Range selection with the mouse
-		rt = pax->axRect;
-		rt.left = curRange.px1; 
-		rt.right = curRange.px2; 
-		rt.top--;
-		rt.bottom++;
-		pDC->SolidFill(selColor, rt);
-	}
 	pax->axRect = rt3;
 	SIZE sz (pDC->GetTextExtentPoint32 ("X", 5));
 	pax->ytick.rt = CRect( CPoint(rt3.left-sz.cx, rt3.top), CPoint(rt3.left,rt3.bottom));
@@ -669,6 +692,28 @@ CRect CPlotDlg::DrawAxis(CDC *pDC, PAINTSTRUCT *ps, CAxis *pax)
 		strcpy(buf1,"Press Ctrl key again to revert to the normal mode.");
 		pDC->TextOut(80, 20, buf1);
 	}
+
+	if (curRange != NO_SELECTION && (gcf.ax.size()==1 || pax != gcf.ax[1]) )
+	{ // Range selection with the mouse
+		rt = pax->axRect;
+		rt.left = curRange.px1+1; 
+		rt.right = curRange.px2-1; 
+		rt.top--;
+		rt.bottom++;
+		pDC->SolidFill(selColor, rt);
+		if (ClickOn)
+		{
+			pDC->CreatePen(PS_DOT, 1, RGB(255, 100, 0));
+			pDC->MoveTo(curRange.px1, rt.bottom-2);
+			pDC->LineTo(curRange.px1, rt.top+1); 
+			pDC->MoveTo(curRange.px2, rt.bottom-2);
+			pDC->LineTo(curRange.px2, rt.top+1); 
+		}
+	}
+
+	pDC->CreateFont(15, 0, 0, 0, FW_NORMAL, 0, 0, 0, ANSI_CHARSET, 
+		OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Arial");
+
 	return rt3;
 }
 
@@ -677,23 +722,29 @@ void CPlotDlg::OnSize(UINT nType, int cx, int cy)
 {
 	int res;
 	int new1, new2;
+	int sigtype(-1);
+	if (gcf.ax.size()>0 && gcf.ax.front()->m_ln.size()>0)
+		sigtype = gcf.ax.front()->m_ln.front()->sig.GetType();
+
 	if (hStatusbar==NULL)
 	{
 		hStatusbar = CreateWindow (STATUSCLASSNAME, "", WS_CHILD|WS_VISIBLE|WS_BORDER|SBS_SIZEGRIP,
 			0, 0, 0, 0, hDlg, (HMENU)0, hInst, NULL);
 		int sbarWidth[] = {40, 80, 185, 187, 227, 229, 269, 309, 414, 416, 500, -1};
-		if (sig.GetType()!=CSIG_AUDIO)
+		if (sigtype!=CSIG_AUDIO)
 		{
 			sbarWidth[2]=120; sbarWidth[3]=125; sbarWidth[4]=177; sbarWidth[5]=229;
 		}
 		res = ::SendMessage (hStatusbar, SB_SETPARTS, 12, (LPARAM)sbarWidth);
 		SetHWND_GRAFFY(hDlg);
+#ifndef NO_PLAYSND
 		SetHWND_SIGPROC(GetParent(hDlg));
+#endif // NO_PLAYSND
 	}
 	else
 		::MoveWindow(hStatusbar, 0, 0, cx, 0, 1); // no need to worry about y pos and height
 	
-	for (vector<CAxis*>::iterator it=gcf->ax.begin(); it!=gcf->ax.end(); it++) 
+	for (vector<CAxis*>::iterator it=gcf.ax.begin(); it!=gcf.ax.end(); it++) 
 	{
 		(*it)->ytick.tics1 = makefixtick((*it)->ylim[0], (*it)->ylim[1], (*it)->GetDivCount('y', -1));
 		if ( (*it)->m_ln.front()->sig.GetType()==CSIG_AUDIO)
@@ -701,22 +752,22 @@ void CPlotDlg::OnSize(UINT nType, int cx, int cy)
 		else
 			(*it)->setxticks();
 	}
-	if (curRange != NO_SELECTION && gcf->ax.size()>0)
+	if (curRange != NO_SELECTION && gcf.ax.size()>0)
 	{
 		//need to adjust curRange according to the change of size 
 		//new pixel pt after size change
-		new1 = gcf->ax.front()->timepoint2pix(selRange.tp1);
-		new2 = gcf->ax.front()->timepoint2pix(selRange.tp2);
+		new1 = gcf.ax.front()->timepoint2pix(selRange.tp1);
+		new2 = gcf.ax.front()->timepoint2pix(selRange.tp2);
 		curRange.px1 = new1;
 		curRange.px2 = new2;
 	}
 	if (hTTtimeax[0]==NULL)
 	{
-		for (int k=0; k<9; k++)
+		for (int k=0; k<10; k++)
 		{
 			hTTtimeax[k] = CreateTT(hStatusbar, &ti_taxis);
 			::SendMessage (hStatusbar, SB_GETRECT, k, (LPARAM)&ti_taxis.rect);
-			ti_taxis.lpszText=ttstat[k];
+			ti_taxis.lpszText=(LPSTR)ttstat[k].c_str();
 			::SendMessage(hTTtimeax[k], TTM_ACTIVATE, TRUE, 0);	
 			::SendMessage(hTTtimeax[k], TTM_SETMAXTIPWIDTH, 0, 400);
 			::SendMessage(hTTtimeax[k], TTM_ADDTOOL, 0, (LPARAM) (LPTOOLINFO) &ti_taxis);
@@ -725,24 +776,26 @@ void CPlotDlg::OnSize(UINT nType, int cx, int cy)
 			if (k==4) k++;
 		}
 	}
+	if (sigtype==CSIG_AUDIO) 
+		ttstat[10] = "Y Cursor"; // why is this not working? 10/13/2016
 	::SendMessage(hTTscript, TTM_ACTIVATE, TRUE, 0);
 	InvalidateRect	(NULL);
 }
 //Convention: if a figure handle has two axes, the first axis is the waveform viewer, the second one is for spectrum viewing.
 void CPlotDlg::OnRButtonUp(UINT nFlags, CPoint point) 
 {
-	if (gcf->ax.empty()) return;
+	if (gcf.ax.empty()) return;
 	CAxis *pax = CurrentPoint2CurrentAxis(&point);
 	if (pax!=NULL)
 	{
 		int iSel(-1);
-		for (size_t i=0; i<gcf->ax.size(); i++) if (pax==gcf->ax[i]) iSel=i;
+		for (size_t i=0; i<gcf.ax.size(); i++) if (pax==gcf.ax[i]) iSel=i;
 		//Following the convention
-		subMenu->EnableMenuItem(IDM_PLAY, iSel==0? MF_ENABLED : MF_GRAYED);
-		subMenu->EnableMenuItem(IDM_WAVWRITE, iSel==0? MF_ENABLED : MF_GRAYED);
-		subMenu->EnableMenuItem(IDM_SPECTRUM, iSel==0? MF_ENABLED : MF_GRAYED);
+		subMenu.EnableMenuItem(IDM_PLAY, iSel==0? MF_ENABLED : MF_GRAYED);
+		subMenu.EnableMenuItem(IDM_WAVWRITE, iSel==0? MF_ENABLED : MF_GRAYED);
+		subMenu.EnableMenuItem(IDM_SPECTRUM, iSel==0? MF_ENABLED : MF_GRAYED);
 		ClientToScreen(hDlg, &point);    // To convert point to re: the whole screen 
-		TrackPopupMenu(subMenu->GetHandle(), TPM_RIGHTBUTTON, point.x, point.y, 0, hDlg, 0);
+		TrackPopupMenu(subMenu.GetHandle(), TPM_RIGHTBUTTON, point.x, point.y, 0, hDlg, 0);
 	}
 }
 
@@ -753,7 +806,7 @@ void CPlotDlg::OnLButtonDblClk(UINT nFlags, CPoint point)
 void CPlotDlg::OnLButtonDown(UINT nFlags, CPoint point) 
 {
 	SetGCF();
-	edge = -1;
+	edge.px1 = edge.px2 = -1;
 	gcmp=point;
 	CAxis *cax = CurrentPoint2CurrentAxis(&point);
 //	UpdateRects(cax);
@@ -769,20 +822,13 @@ void CPlotDlg::OnLButtonDown(UINT nFlags, CPoint point)
 			CRect rt(curRange.px1, cax->axRect.top, curRange.px2+1, cax->axRect.bottom+1);
 			InvalidateRect(&rt);
 		}
-		lastpoint.x = gcmp.x;
+		lbuttondownpoint.x = gcmp.x;
 		curRange.reset();
 		{
-			CWnd tp;
-			tp.Attach(hDlg);
-			CClientDC dc(&tp);
-			CPen *dotted = new CPen;
-			COLORREF dd = RGB(255, 0, 0);
-			dotted->CreatePen(PS_DOT, 1, dd);
-			dc.SelectObject(dotted);
-			dc.MoveTo(gcmp.x, cax->axRect.bottom);
-			dc.LineTo(gcmp.x, cax->axRect.top); 
-			delete dotted;
-			tp.Detach();
+			CClientDC dc(hDlg);
+			dc.CreatePen(PS_DOT, 1, RGB(255, 100, 0));
+			dc.MoveTo(gcmp.x, cax->axRect.bottom-1);
+			dc.LineTo(gcmp.x, cax->axRect.top+1); 
 		}
 		break;
 	default:
@@ -795,13 +841,12 @@ void CPlotDlg::OnLButtonUp(UINT nFlags, CPoint point)
 {
 	char buf[32];
 	CRect rt;
-	if (axis_expanding | gcf->ax.empty()) {ClickOn=0; return;}
+	if (axis_expanding | gcf.ax.empty()) {ClickOn=0; return;}
 	CAxis *cax = CurrentPoint2CurrentAxis(&point);
-	CAxis *pax = gcf->ax.front();
+	CAxis *pax = gcf.ax.front();
 	if (curRange.px2<0) // if button up without mouse moving, reset
 		curRange.reset();
 	CSignals _sig;
-	double fs = (double)sig.GetFs();
 	clickedPt.x=-999; clickedPt.y=-999;
 	lastPtDrawn.x=-1; lastPtDrawn.y=-1;
 	switch(ClickOn)
@@ -829,18 +874,18 @@ void CPlotDlg::OnLButtonUp(UINT nFlags, CPoint point)
 		}
 		else
 		{
-			if (point.x > lastpoint.x) // moving right
+			if (point.x > lbuttondownpoint.x) // moving right
 			{
 				curRange.px2 = point.x;
-				if (edge>curRange.px2) { //moved right and left
+				if (edge.px1>curRange.px2) { //moved right and left
 					rt.left = curRange.px2;
-					rt.right = edge+2; }
+					rt.right = edge.px1+2; }
 			}
 			else
 			{
 				curRange.px1 = point.x;
-				if (edge>0 && edge<curRange.px1) { //moved left and right
-					rt.left = edge-2;
+				if (edge.px1>0 && edge.px1<curRange.px1) { //moved left and right
+					rt.left = edge.px1-2;
 					rt.right = curRange.px1;
 				}
 			}
@@ -849,7 +894,7 @@ void CPlotDlg::OnLButtonUp(UINT nFlags, CPoint point)
 		InvalidateRect(&rt);
 		selRange.tp1 = cax->pix2timepoint(curRange.px1); 
 		selRange.tp2 = cax->pix2timepoint(curRange.px2); 
-		if (ClickOn && gcf->ax.size()==2 && gcf->ax[1]->visible)
+		if (ClickOn && gcf.ax.size()==2 && gcf.ax[1]->visible)
 			OnMenu(IDM_SPECTRUM_INTERNAL);
 		break;
 	default:
@@ -861,7 +906,7 @@ void CPlotDlg::OnLButtonUp(UINT nFlags, CPoint point)
 		else if (mask==RC_SPECTRUM)
 			if (1)// (MoveOn & RC_SPECTRUM)
 			{
-				ChangeColorSpecAx(CRect(gcf->ax[1]->axRect), MoveOn = (bool)0);
+				ChangeColorSpecAx(CRect(gcf.ax[1]->axRect), MoveOn = (bool)0);
 				InvalidateRect(NULL);
 			}
 			else
@@ -889,7 +934,7 @@ void CPlotDlg::OnMouseMove(UINT nFlags, CPoint point)
 	switch(mousePt & 0xff00) // spectrum axis has the priority over waveform axis 
 	{
 	case RC_SPECTRUM:
-		sprintf(buf,"%.1fHz",gcf->ax[1]->pix2timepoint(point.x));
+		sprintf(buf,"%.1fHz",gcf.ax[1]->pix2timepoint(point.x));
 		cax->GetCoordinate(point, x, y);
 		sprintf(buf2,"%.2f",y);
 		KillTimer(CUR_MOUSE_POS);
@@ -900,17 +945,17 @@ void CPlotDlg::OnMouseMove(UINT nFlags, CPoint point)
 		if (lastPtDrawn.x>0 && lastPtDrawn.y>0) // moving while button down 
 		{
 			shift = point - lastPtDrawn;
-			CRect axRectOld(gcf->ax[1]->axRect);
+			CRect axRectOld(gcf.ax[1]->axRect);
 			CRect clientrt;
 			GetClientRect(hDlg, &clientrt);
-			gcf->ax[1]->axRect.MoveToXY(gcf->ax[1]->axRect.TopLeft()+shift); // new top left point is shifted
-			gcf->ax[1]->pos.Set(clientrt, gcf->ax[1]->axRect);
+			gcf.ax[1]->axRect.MoveToXY(gcf.ax[1]->axRect.TopLeft()+shift); // new top left point is shifted
+			gcf.ax[1]->pos.Set(clientrt, gcf.ax[1]->axRect);
 		}
-		rect2Invalidate = gcf->ax[1]->GetWholeRect();
+		rect2Invalidate = gcf.ax[1]->GetWholeRect();
 		rect2Invalidate.top -= 15;
 		rect2Invalidate.right += 20;
 		if (shift.x!=0 || shift.y!=0)
-			ChangeColorSpecAx(CRect(gcf->ax[1]->axRect), true);
+			ChangeColorSpecAx(CRect(gcf.ax[1]->axRect), true);
 		InvalidateRect(rect2Invalidate); 
 		lastPtDrawn = point;
 		break;
@@ -930,18 +975,18 @@ void CPlotDlg::OnMouseMove(UINT nFlags, CPoint point)
 				else if (k>13) k=10;
 				if (shift.x>0)	
 				{
-					for (; k>0; k--)	gcf->ax[1]->xlim[1] *= .95 ;
-					gcf->ax[1]->xlim[1] = max(100, gcf->ax[1]->xlim[1]);
+					for (; k>0; k--)	gcf.ax[1]->xlim[1] *= .95 ;
+					gcf.ax[1]->xlim[1] = max(100, gcf.ax[1]->xlim[1]);
 				}
 				else  /* shift.x<0 */
 				{
-					for (; k>0; k--)	gcf->ax[1]->xlim[1] /= .95 ;
-					gcf->ax[1]->xlim[1] = min(gcf->ax[1]->xlim[1], gcf->ax[1]->xlimFull[1]);
+					for (; k>0; k--)	gcf.ax[1]->xlim[1] /= .95 ;
+					gcf.ax[1]->xlim[1] = min(gcf.ax[1]->xlim[1], gcf.ax[1]->xlimFull[1]);
 				}
-				rect2Invalidate = gcf->ax[1]->GetWholeRect();
+				rect2Invalidate = gcf.ax[1]->GetWholeRect();
 				rect2Invalidate.right += 5 + (int)(rect2Invalidate.Width()/10);
 				InvalidateRect(rect2Invalidate); 
-				gcf->ax[1]->setxticks();
+				gcf.ax[1]->setxticks();
 			}
 		}
 		lastPtDrawn = point;
@@ -949,72 +994,68 @@ void CPlotDlg::OnMouseMove(UINT nFlags, CPoint point)
 	}
 	if (mousePt == 0x000f) // RC_WAVEFORM
 	{
-		cax = gcf->ax[0];
+		cax = gcf.ax[0];
 		::SendMessage (hStatusbar, SB_SETTEXT, 10, (LPARAM)"");
-		if (ClickOn & (unsigned short)128) lastpoint.x = cax->axRect.left;
-		else if (ClickOn & (unsigned short)32) lastpoint.x = cax->axRect.right;
+		if (ClickOn & (unsigned short)128) lbuttondownpoint.x = cax->axRect.left;
+		else if (ClickOn & (unsigned short)32) lbuttondownpoint.x = cax->axRect.right;
 		if (ClickOn)
-		{ // lastpoint.x is the x point when mouse was clicked
-			rt.top = cax->axRect.top;
-			rt.bottom = cax->axRect.bottom+1;
-			if (point.x > lastpoint.x) // moving right
+		{ // lbuttondownpoint.x is the x point when mouse was clicked
+			rt.top = cax->axRect.top+1;
+			rt.bottom = cax->axRect.bottom-1;
+			if (point.x > lbuttondownpoint.x) // current position right side of the beginning point
 			{
-				if (edge==-1) edge = lastpoint.x;
-				curRange.px1 = lastpoint.x;
+				if (edge.px1==-1) edge.px1 = lbuttondownpoint.x;
+				curRange.px1 = lbuttondownpoint.x;
 				curRange.px2 = point.x;
-				rt.right = curRange.px2;
-				// If move left-right and passed the beginning point,i.w., lastpoint, keep the edge in rt, so it can be properly redrawn
-				if ( (point.x-lastpoint.x)*(point.x-edge)>0) 
-					rt.left = edge-1;
+				edge.px2 = max(lastpoint.x, max(edge.px2, point.x));
+				rt.right = edge.px2;
+
+				// If move left-right and passed the beginning point,i.w., lbuttondownpoint, keep the edge.px1 in rt, so it can be properly redrawn
+				if ( (point.x-lbuttondownpoint.x)*(point.x-edge.px1)>0) 
+					rt.left = edge.px1-1;
 				else
 					rt.left = curRange.px1;	
-				edge =  max( edge, curRange.px2);
+				edge.px1 =  max( edge.px1, curRange.px2);
 			}
-			else if (point.x < lastpoint.x) // moving left
+			else if (point.x < lbuttondownpoint.x) // moving left
 			{
-				if (edge==-1) edge = lastpoint.x;
-				curRange.px2 = lastpoint.x;
+				if (edge.px1==-1) edge.px1 = lbuttondownpoint.x;
+				curRange.px2 = lbuttondownpoint.x;
 				curRange.px1 = point.x;
-				rt.left = curRange.px1;	
-				// If move right-left and passed the beginning point,i.w., lastpoint), keep the edge in rt, so it can be properly redrawn
-				if ( (point.x-lastpoint.x)*(point.x-edge)>0) 
-					rt.right = edge+1;
+				if (point.x>lastpoint.x) // moving left but just turned right 
+					rt.left = lastpoint.x;
 				else
-					rt.right = curRange.px2+1;
-				edge =  min(edge, curRange.px1);
+					rt.left = curRange.px1;
+				// If move right-left and passed the beginning point,i.w., lbuttondownpoint), keep the edge.px1 in rt, so it can be properly redrawn
+				if ( (point.x-lbuttondownpoint.x)*(point.x-edge.px1)>0) 
+					rt.right = edge.px1+1;
+				else
+					rt.right = curRange.px2;
+				edge.px1 =  min(edge.px1, curRange.px1);
 			}
 			else 
 				curRange.reset();
 			if (curRange != NO_SELECTION)
 			{
-				CWnd tp;
-				tp.Attach(hDlg);
-				CClientDC dc(&tp);
-				CPen *dotted = new CPen;
-				COLORREF dd = RGB(255, 0, 0);
-				dotted->CreatePen(PS_DOT, 1, dd);
-				dc.SelectObject(dotted);
-				dc.MoveTo(lastpoint.x, cax->axRect.bottom);
-				dc.LineTo(lastpoint.x, cax->axRect.top); 
-				delete dotted;
-				tp.Detach();
+				//CClientDC dc(hDlg);
+				//dc.CreatePen(PS_DOT, 1, RGB(255, 100, 0));
+				//dc.MoveTo(curRange.px1, cax->axRect.bottom-2);
+				//dc.LineTo(curRange.px1, cax->axRect.top+1); 
+				//dc.MoveTo(point.x, cax->axRect.bottom-2);
+				//dc.LineTo(point.x, cax->axRect.top+1); 
 				InvalidateRect(&rt);
 				ShowStatusSelectionOfRange(cax);
 			}
+			lastpoint = point;
 		}
-		else edge = -1;
+		else edge.px1 = -1;
 		cax->GetCoordinate(point, x, y);
 		sprintf(buf2,"%.2f",y);
-		if (sig.GetType()==CSIG_AUDIO)
-		{
+		if (cax->m_ln.size()>0 && cax->m_ln[0]->sig.GetType()==CSIG_AUDIO)
 			sprintf(buf,"%.3fs",cax->pix2timepoint(point.x));
-			::SendMessage (hStatusbar, SB_SETTEXT, 6, (LPARAM)buf2);
-		}
 		else
-		{
 			sprintf(buf,"%.2f",cax->pix2timepoint(point.x));
-			::SendMessage (hStatusbar, SB_SETTEXT, 5, (LPARAM)buf2);
-		}
+		::SendMessage (hStatusbar, SB_SETTEXT, 10, (LPARAM)buf2);
 		KillTimer(CUR_MOUSE_POS);
 		::SendMessage (hStatusbar, SB_SETTEXT, 4, (LPARAM)buf);
 		SetTimer(CUR_MOUSE_POS, 2000, NULL);
@@ -1026,6 +1067,7 @@ void CPlotDlg::OnMouseMove(UINT nFlags, CPoint point)
 	{
 		::SendMessage (hStatusbar, SB_SETTEXT, 4, (LPARAM)"");
 		::SendMessage (hStatusbar, SB_SETTEXT, 5, (LPARAM)"");
+		::SendMessage (hStatusbar, SB_SETTEXT, 10, (LPARAM)"");
 	}
 }
 
@@ -1033,14 +1075,14 @@ void CPlotDlg::OnMouseMove(UINT nFlags, CPoint point)
 void CPlotDlg::SetGCF()
 {
 	if (hDlg!=GetForegroundWindow())	SetForegroundWindow(hDlg);
-	::PostMessage(GetHWND_GRAFFY(), WM_GCF_UPDATED, (WPARAM)gcf, (LPARAM)hDlg);
+	::PostMessage(GetHWND_GRAFFY(), WM_GCF_UPDATED, (WPARAM)&gcf, (LPARAM)hDlg);
 }
 
 #define LOG(X) fprintf(fp,(X));
 
 void CPlotDlg::setpbprogln(int curPtx)
 {
-	CAxis *pax=gcf->ax.front();
+	CAxis *pax=gcf.ax.front();
 	playLoc = curPtx;
 	InvalidateRect(CRect(playLoc-1, pax->axRect.top, playLoc+1, pax->axRect.bottom),0);
 }
@@ -1056,7 +1098,7 @@ void CPlotDlg::OnSoundEvent(int index, __int64 bufferlocation)
  // kind of "fake" progress line would show up to make it move smoothly), but it wasn't useful--
  // For the most part, WM_TIMER wasn't being processed as frequently as needed---remember it has a very
  // low priority and it wasn't hardly processed at all while this callback was processed.
-	CAxis *pax=gcf->ax.front();
+	CAxis *pax=gcf.ax.front();
 	if (index==0 && bufferlocation==0)
 	{
 		int leftEdge = (curRange == NO_SELECTION)? pax->axRect.left: curRange.px1;
@@ -1080,7 +1122,7 @@ void CPlotDlg::OnSoundEvent(int index, __int64 bufferlocation)
 
 void CPlotDlg::ChangeColorSpecAx(CRect rt, bool onoff)
 {// on: ready to move, off: movind done
-	CAxis *pax = gcf->ax[1];
+	CAxis *pax = gcf.ax[1];
 	static COLORREF col1, col2;
 	if (!onoff)
 	{
@@ -1110,19 +1152,17 @@ void CPlotDlg::OnTimer(UINT id)
 	case CUR_MOUSE_POS:
 		::SendMessage (hStatusbar, SB_SETTEXT, 4, (LPARAM)"");
 		::SendMessage (hStatusbar, SB_SETTEXT, 5, (LPARAM)"");
-		::SendMessage (hStatusbar, SB_SETTEXT, 6, (LPARAM)"");
-		::SendMessage (hStatusbar, SB_SETTEXT, 8, (LPARAM)"");
 		::SendMessage (hStatusbar, SB_SETTEXT, 10, (LPARAM)"");
 		KillTimer(id);
 		break;
 	case MOVE_SPECAX:
 		if (ClickOn & RC_SPECTRUM)
 		{
-			CAxis *ax=gcf->ax[1];
+			CAxis *ax=gcf.ax[1];
 			BYTE r = GetRValue(ax->color);
 			BYTE g = GetGValue(ax->color);
 			BYTE b = GetBValue(ax->color);
-			gcf->ax[1]->color = RGB(g,b,r);
+			gcf.ax[1]->color = RGB(g,b,r);
 			CRect rt(ax->axRect.left, ax->axRect.top, ax->axRect.right, ax->axRect.bottom);
 			InvalidateRect(&rt);
 		}
@@ -1132,9 +1172,9 @@ void CPlotDlg::OnTimer(UINT id)
 }
 
 int CPlotDlg::IsSpectrumAxis(CAxis* pax)
-{ // return true when xtick.tics1 is empty or its full x axis right edge is half the sample rate of the front signal
-	if (pax == gcf->ax.front())	return 0;
-	int fs = gcf->ax.front()->m_ln.front()->sig.GetFs();
+{ // return true when xtick.tics1 is empty or its full x axis right edge.px1 is half the sample rate of the front signal
+	if (pax == gcf.ax.front())	return 0;
+	int fs = gcf.ax.front()->m_ln.front()->sig.GetFs();
 	if ( abs((int)(pax->xlimFull[1] - fs/2)) <= 2 ) return 1;
 	else return 0;
 }
@@ -1145,7 +1185,7 @@ void CPlotDlg::OnMenu(UINT nID)
 	char fullfname[MAX_PATH];
 	char fname[MAX_PATH];
 	CFileDlg fileDlg;
-	CAxis *cax(gcf->ax.front()); // Following the convention
+	CAxis *cax(gcf.ax.front()); // Following the convention
 	CRect rt;
 	CSize sz;
 	CFont editFont;
@@ -1154,16 +1194,17 @@ void CPlotDlg::OnMenu(UINT nID)
 	char errstr[256];
 	CSignals _sig, chainlessed;
 	bool stereo;
-	double fs = (double)sig.GetFs();
 	fftw_plan plan;
 	double *freq, *fft, *mag, *fft2, *mag2, maxmag;
 	CSignal dummy;
-	char buf[32];
+	double dfs;
+	char buf[64];
 	int deltapixel;
 	vector<CLine*> swappy;
-	double shift, newlimit1,  newlimit2, deltaxlim;
+	double shift, newlimit1,  newlimit2, deltaxlim, dval;
 	double lastxlim[2];
 	CTick lastxtick;
+	INT_PTR res;
 	errstr[0]=0;
 	switch (nID)
 	{
@@ -1175,17 +1216,34 @@ void CPlotDlg::OnMenu(UINT nID)
 		InvalidateRect(NULL);
 		break;
 
+	case IDM_TRANSPARENCY:
+		dval = (double)opacity/255.*100.;
+		sprintf(buf,"%d",(int)(dval+.5));
+		res = InputBox("Transparency", "transparent(0)--opaque(100)", buf, sizeof(buf));
+		if (res==1 && strlen(buf)>0)
+		{
+			if (res=sscanf(buf,"%lf", &dval))
+			{
+				if (dval<=100. && dval>=0.)
+				{
+					opacity = (unsigned char)(dval/100.*255-.5);
+					SetLayeredWindowAttributes(hDlg, 0, opacity, LWA_ALPHA); // how can I transport transparency from application? Let's think about it tomorrow 1/6/2017 12:19am
+				}
+			}
+		}
+		break;
+
 	case IDM_FULLVIEW:
 		zoom=0;
 		memcpy(cax->xlim, cax->xlimFull, sizeof(double)*2);
-		for (vector<CAxis*>::iterator paxit=gcf->ax.begin(); paxit!=gcf->ax.end(); paxit++) 
+		for (vector<CAxis*>::iterator paxit=gcf.ax.begin(); paxit!=gcf.ax.end(); paxit++) 
 		{
 			if ( (*paxit)->m_ln.front()->sig.GetType()==CSIG_AUDIO)
 				(*paxit)->xtick.tics1 = makefixtick((*paxit)->xlim[0], (*paxit)->xlim[1], (*paxit)->GetDivCount('x', -1));
 			else
 			{// it redraws the xticks only when it is the first axis (when it is nonaudio), 
-//				int sss = abs((int)(*paxit)->xlimFull[1] - gcf->ax.front()->m_ln.front()->sig.GetFs()/2);
-				if (paxit==gcf->ax.begin() || (*paxit)->xtick.tics1.empty())
+//				int sss = abs((int)(*paxit)->xlimFull[1] - gcf.ax.front()->m_ln.front()->sig.GetFs()/2);
+				if (paxit==gcf.ax.begin() || (*paxit)->xtick.tics1.empty())
 					(*paxit)->setxticks();
 			}
 			(*paxit)->ytick.tics1 = makefixtick((*paxit)->ylim[0], (*paxit)->ylim[1], (*paxit)->GetDivCount('y', -1));
@@ -1258,7 +1316,7 @@ void CPlotDlg::OnMenu(UINT nID)
 		::SendMessage (hStatusbar, SB_SETTEXT, 1, (LPARAM)buf);
 
 		InvalidateRect(&rt, FALSE);
-		if (gcf->ax.size()==2 && gcf->ax[1]->visible) OnMenu(IDM_SPECTRUM_INTERNAL);
+		if (gcf.ax.size()==2 && gcf.ax[1]->visible) OnMenu(IDM_SPECTRUM_INTERNAL);
 		return;
 
 	case IDM_ZOOMSELECT:
@@ -1277,7 +1335,7 @@ void CPlotDlg::OnMenu(UINT nID)
 				cax->setxticks();
 			cax->ytick.tics1 = makefixtick(cax->ylim[0], cax->ylim[1], cax->GetDivCount('y', -1));
 			InvalidateRect(NULL);
-			if (gcf->ax.size()==2 && gcf->ax[1]->visible) OnMenu(IDM_SPECTRUM_INTERNAL);
+			if (gcf.ax.size()==2 && gcf.ax[1]->visible) OnMenu(IDM_SPECTRUM_INTERNAL);
 		}
 		curRange.reset();
 		::SendMessage (hStatusbar, SB_SETTEXT, 4, (LPARAM)"");
@@ -1286,6 +1344,7 @@ void CPlotDlg::OnMenu(UINT nID)
 		return;
 
 	case IDM_PLAY:
+#ifndef NO_PLAYSND
 		if (curRange == NO_SELECTION)
 		{
 			deltapixel = cax->axRect.right - cax->axRect.left;
@@ -1313,53 +1372,53 @@ void CPlotDlg::OnMenu(UINT nID)
 		TerminatePlay();
 		playLoc = -1;
 		OnSoundEvent(-1,0);
+#endif
 		return;
 	case IDM_SPECTRUM:
-		if (sig.GetType()!=CSIG_AUDIO) break;
-		if (gcf->ax.size()==1)
+		if (cax->m_ln.front()->sig.GetType()!=CSIG_AUDIO) break;
+		if (gcf.ax.size()==1)
 		{
-			CAxis *ax = gcf->axes(SpecAxPos);
+			CAxis *ax = gcf.axes(SpecAxPos);
 			ax->color = RGB(220, 220, 150);
-			ax->xlim[0]=0;  ax->xlim[1]=(double)sig.GetFs()/2;
+			dfs = (double)cax->m_ln.front()->sig.GetFs();
+			ax->xlim[0]=0;  ax->xlim[1]=dfs/2;
 			ax->visible = true;
 		}
-		else if (gcf->ax.size()==2)
-			gcf->ax[1]->visible = !gcf->ax[1]->visible;
+		else if (gcf.ax.size()==2)
+			gcf.ax[1]->visible = !gcf.ax[1]->visible;
 		OnMenu(IDM_SPECTRUM_INTERNAL);
 		break;
 	case IDM_SPECTRUM_INTERNAL:
+#ifndef NO_FFTW
 		stereo = cax->m_ln.size()>1 ? true : false;
-		if (gcf->ax.size()==1 || !gcf->ax[1]->visible) break;
-		fs = (double)sig.GetFs();
+		if (gcf.ax.size()==1 || !gcf.ax[1]->visible) break;
 		// It gets Chainless inside GetSignalofInterest in this call
+		dfs = (double)cax->m_ln.front()->sig.GetFs();
 		_sig = cax->m_ln.front()->sig;
 		if (!GetCSignalsInRange(1, cax, _sig, 1)) break;
-		if (gcf->ax[1]->m_ln.empty()) lastxlim[0]=1.,lastxlim[1]=-1.;
-		for (; gcf->ax[1]->m_ln.size()>0;)	
+		if (gcf.ax[1]->m_ln.empty()) lastxlim[0]=1.,lastxlim[1]=-1.;
+		for (; gcf.ax[1]->m_ln.size()>0;)	
 		{
-			lastxtick = gcf->ax[1]->xtick;
-			memcpy((void*)lastxlim, (void*)gcf->ax[1]->xlim, sizeof(gcf->ax[1]->xlim));
-			deleteObj(gcf->ax[1]->m_ln[0]);
+			lastxtick = gcf.ax[1]->xtick;
+			memcpy((void*)lastxlim, (void*)gcf.ax[1]->xlim, sizeof(gcf.ax[1]->xlim));
+			deleteObj(gcf.ax[1]->m_ln[0]);
 		}
 		if ((len=_sig.nSamples)<20) 
 		{
-			CWnd tp;
-			tp.Attach(hDlg);
-			CClientDC dc(&tp);
+			CClientDC dc(hDlg);
 			CPen *dotted = new CPen;
 			COLORREF dd = RGB(255, 0, 0);
 			dotted->CreatePen(PS_DOT, 1, dd);
 			dc.SelectObject(dotted);
-			CAxis *pax1=gcf->ax[1];
+			CAxis *pax1=gcf.ax[1];
 			dc.TextOut(pax1->axRect.left, (pax1->axRect.bottom-pax1->axRect.top)/2, "Selection too short");
 			delete[] dotted;
-			tp.Detach();
 			return;
 		}
 		freq = new double[len];
 		fft = new double[len];
 		mag = new double[len/2+1];
-		for (int k=0; k<len; k++)		freq[k]=(double)k/(double)len*fs;
+		for (int k=0; k<len; k++)		freq[k]=(double)k/(double)len*dfs;
 		plan = fftw_plan_r2r_1d(len, _sig.buf, fft, FFTW_R2HC, FFTW_ESTIMATE);
 		if (fabs(_sig.Max()[0]-_sig.Min()[0])>1.e-5) 
 		{
@@ -1394,36 +1453,38 @@ void CPlotDlg::OnMenu(UINT nID)
 				for (int k = 0; k < len/2+1; ++k) mag2[k] = 0.;
 		}
 		fftw_destroy_plan(plan);
-		PlotDouble(gcf->ax[1], len/2+1, freq, mag);
+		PlotDouble(gcf.ax[1], len/2+1, freq, mag);
 		if (stereo) 
 		{
-			PlotDouble(gcf->ax[1], len/2+1, freq, mag2);
-			gcf->ax[1]->m_ln[1]->color = gcf->ax.front()->m_ln[1]->color;
+			PlotDouble(gcf.ax[1], len/2+1, freq, mag2);
+			gcf.ax[1]->m_ln[1]->color = gcf.ax.front()->m_ln[1]->color;
 			delete[] fft2;
 			delete[] mag2;
 		}
-		strcpy(gcf->ax[1]->xtick.format,"%.2gk"); // gcf->ax[1]->xtick.format is called in anticipation of drawticks. i.e., format is used in drawticks
+		strcpy(gcf.ax[1]->xtick.format,"%.2gk"); // gcf.ax[1]->xtick.format is called in anticipation of drawticks. i.e., format is used in drawticks
 		if (lastxlim[0]>lastxlim[1])
 		{
-			gcf->ax[1]->xtick.tics1 = makefixtick(gcf->ax[1]->xlim[0], gcf->ax[1]->xlim[1], gcf->ax[1]->GetDivCount('x', -1));
-			gcf->ax[1]->xtick.mult = 0.001;		
+			gcf.ax[1]->xtick.tics1 = makefixtick(gcf.ax[1]->xlim[0], gcf.ax[1]->xlim[1], gcf.ax[1]->GetDivCount('x', -1));
+			gcf.ax[1]->xtick.mult = 0.001;		
 		}
 		else
 		{
-			gcf->ax[1]->xtick = lastxtick;
-			memcpy((void*)gcf->ax[1]->xlim, (void*)lastxlim, sizeof(gcf->ax[1]->xlim));
+			gcf.ax[1]->xtick = lastxtick;
+			memcpy((void*)gcf.ax[1]->xlim, (void*)lastxlim, sizeof(gcf.ax[1]->xlim));
 		}
-		gcf->ax[1]->ylim[0]=-110; gcf->ax[1]->ylim[1] = 0;
-		gcf->ax[1]->ytick.tics1 = makefixtick(gcf->ax[1]->ylim[0], gcf->ax[1]->ylim[1], gcf->ax[1]->GetDivCount('y', -1));
-		gcf->ax[1]->m_ln.front()->color = gcf->ax.front()->m_ln.front()->color;
+		gcf.ax[1]->ylim[0]=-110; gcf.ax[1]->ylim[1] = 0;
+		gcf.ax[1]->ytick.tics1 = makefixtick(gcf.ax[1]->ylim[0], gcf.ax[1]->ylim[1], gcf.ax[1]->GetDivCount('y', -1));
+		gcf.ax[1]->m_ln.front()->color = gcf.ax.front()->m_ln.front()->color;
 		delete[] freq;
 		delete[] fft;
 		delete[] mag;
 		GetClientRect(hDlg, &rt);
-		gcf->ax[1]->axRect = gcf->ax[1]->pos.GetRect(rt);
-		InvalidateRect(gcf->ax[1]->axRect);
+		gcf.ax[1]->axRect = gcf.ax[1]->pos.GetRect(rt);
+		InvalidateRect(gcf.ax[1]->axRect);
+#endif
 		return;
 	case IDM_WAVWRITE:
+#ifndef NO_PLAYSND
 		fullfname[0]=0;
 		fileDlg.InitFileDlg(hDlg, hInst, "");
 		_sig = cax->m_ln.front()->sig;
@@ -1437,6 +1498,7 @@ void CPlotDlg::OnMenu(UINT nID)
 		{
 			if (GetLastError()!=0) GetLastErrorStr(errstr), MessageBox (errstr, "Filesave dialog box error");
 		}
+#endif
 		return;
 	}
 	InvalidateRect(NULL);
@@ -1444,12 +1506,12 @@ void CPlotDlg::OnMenu(UINT nID)
 
 CAxis * CPlotDlg::CurrentPoint2CurrentAxis(CPoint *point)
 {
-	for (int k((int)gcf->ax.size()-1); k>=0; k--) //reason for decreasing: when the spectrum axis is clicked, that should be gca even if that overlaps with signal axis
+	for (int k((int)gcf.ax.size()-1); k>=0; k--) //reason for decreasing: when the spectrum axis is clicked, that should be gca even if that overlaps with signal axis
 	{
-		if (IsInsideRect(gcf->ax[k]->axRect, point))
+		if (IsInsideRect(gcf.ax[k]->axRect, point))
 		{
-			gca = gcf->ax[k];
-			return gcf->ax[k];
+			gca = gcf.ax[k];
+			return gcf.ax[k];
 		}
 	}
 	return NULL;
@@ -1462,7 +1524,7 @@ int CPlotDlg::GetSignalofInterest(int code, CSignal &out, bool chainless)
 	//return 0 if the range is zero (if ind1==ind2 or xlim is not initialized yet)
 	int ind1, ind2;
 	int fs = out.GetFs();
-	CAxis *pax(gcf->ax.front());  // Following the convention
+	CAxis *pax(gcf.ax.front());  // Following the convention
 	if (pax->xlim[0]>=pax->xlim[1]) return 0;
  	GetSignalIndicesofInterest(code, ind1, ind2);
 	if (ind1==ind2) return 0;
@@ -1545,12 +1607,12 @@ unsigned _int8 GetMousePosAxis(CPoint pt, CAxis* pax)
 unsigned short CPlotDlg::GetMousePos(CPoint pt)
 {
 	unsigned short res(0);
-	if (gcf->ax.empty()) return 0;
+	if (gcf.ax.empty()) return 0;
 	//process only the first two axes
-	if (gcf->ax.size()>1 && gcf->ax[1]->visible)
-		return MAKEWORD(GetMousePosAxis(pt, gcf->ax.front()),  GetMousePosAxis(pt, gcf->ax[1])); 
+	if (gcf.ax.size()>1 && gcf.ax[1]->visible)
+		return MAKEWORD(GetMousePosAxis(pt, gcf.ax.front()),  GetMousePosAxis(pt, gcf.ax[1])); 
 	else
-		return MAKEWORD(GetMousePosAxis(pt, gcf->ax.front()),  0); 
+		return MAKEWORD(GetMousePosAxis(pt, gcf.ax.front()),  0); 
 }
 
 void CPlotDlg::OnActivate(UINT state, HWND hwndActDeact, BOOL fMinimized)
@@ -1588,7 +1650,7 @@ void CPlotDlg::HandleLostFocus(UINT umsg, LPARAM lParam)
  //   GetLocalTime(&lt);	
 	if (ClickOn)
 	{
-		pax = gcf->ax.front();
+		pax = gcf.ax.front();
 		rt.top = pax->axRect.top;
 		rt.bottom = pax->axRect.bottom+1;
 		if (pax->axRect.right - curRange.px2 < curRange.px1 - pax->axRect.left) // toward right

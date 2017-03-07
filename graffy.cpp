@@ -14,20 +14,25 @@ HINSTANCE hInst;
 CPlotDlg* childfig;
 GRAPHY_EXPORT HWND hPlotDlgCurrent;
 
+#define WM_PLOT_DONE	WM_APP+328
+
+
+HANDLE mutexPlot;
+HANDLE hEvent;
 HWND hWndApp(NULL);
 
 class CGraffyDLL : public CWinApp 
 {
 public:
 	CGobj GraffyRoot;
-	CPlotDlg **fig;
-	int closeFigure(int figId);
+	vector<CPlotDlg *> fig;
+	vector<HWND> hDlg_fig;
 	vector<HANDLE> figures();
 	vector<CAxis*> m_ax;
 	HANDLE  findFigure(const char *caption, int *nFigs=NULL);
-	HANDLE  openFigure(CRect *rt, const char* caption, const CSignals &data, HWND hWndAppl, int devID, double blocksize);
-	HANDLE  openFigure(CRect *rt, const CSignals &data, HWND hWndAppl, int devID, double blocksize);
-	int nFigures;
+	HANDLE  openFigure(CRect *rt, const char* caption, HWND hWndAppl, int devID, double blocksize);
+	HANDLE  openFigure(CRect *rt, HWND hWndAppl, int devID, double blocksize);
+	int closeFigure(HANDLE h);
 	CGraffyDLL();
 	virtual ~CGraffyDLL();
 };	
@@ -38,32 +43,34 @@ CGraffyDLL theApp;
 
 int getID4hDlg(HWND hDlg)
 {
-	int i;
-	if (theApp.fig[theApp.nFigures-1]->hDlg==NULL) return theApp.nFigures-1;
-	for (i=0; i<theApp.nFigures; i++)
-	{
-		if (hDlg==theApp.fig[i]->hDlg) 	return i; 
-	}
-	//FILE *fp=fopen("getID4hDlg.log","at");
- //   SYSTEMTIME lt;
- //   GetLocalTime(&lt);	
-	//char buffer[256];
-	//sprintf(buffer, "[%02d/%02d/%4d, %02d:%02d:%02d] getID4hDlg error\n", lt.wMonth, lt.wDay, lt.wYear, lt.wHour, lt.wMinute, lt.wSecond);
-	//fprintf(fp, buffer);
-	//fclose(fp);
-	return 0;
+/*	FILE *fp=fopen("getID4hDlg.log","at");
+    SYSTEMTIME lt;
+    GetLocalTime(&lt);	
+	char buffer[256];
+	sprintf(buffer, "[%02d/%02d/%4d, %02d:%02d:%02d] getID4hDlg error\n", lt.wMonth, lt.wDay, lt.wYear, lt.wHour, lt.wMinute, lt.wSecond);
+	fprintf(fp, buffer);
+	fclose(fp);*/
+	size_t k(0);
+	for (vector<HWND>::iterator it=theApp.hDlg_fig.begin(); it!=theApp.hDlg_fig.end(); it++, k++) 
+	{ if (hDlg==*it)   return (int)k; }
+	return -1;
 }
 
-BOOL CALLBACK DlgProc (HWND hDlg, UINT umsg, WPARAM wParam, LPARAM lParam)
+INT_PTR CALLBACK DlgProc (HWND hDlg, UINT umsg, WPARAM wParam, LPARAM lParam)
 {
-
 	int id = getID4hDlg(hDlg);
-	//FILE *fp=fopen("track.txt","at");
-	//if (umsg==WM_ACTIVATE || umsg==WM_NCACTIVATE || umsg==WM_ACTIVATEAPP || umsg==WM_GETICON || umsg==WM_KEYDOWN || umsg==WM_COMMAND )
-	//	fprintf(fp, "window %d, %x: msg: 0x%04x %s, wParam=%d\n", id, hDlg, umsg, wmstr[umsg].c_str(), wParam);
-	//else if (umsg!=WM_NCHITTEST && umsg!=WM_SETCURSOR && umsg!=WM_MOUSEMOVE && umsg!=WM_NCMOUSEMOVE && umsg!=WM_WINDOWPOSCHANGING && umsg!= WM_WINDOWPOSCHANGED)
-	//	fprintf(fp, "window %d, %x: msg: 0x%04x %s\n", id, hDlg, umsg, wmstr[umsg].c_str());
-	//fclose(fp);
+	if (id<0) // This means theApp.hDlg_fig has not gotten hDlg for the created window, i.e., processing early messages prior to WM_INITDIALOG
+	{ 
+		//then add hDlg to the vector
+		id = theApp.hDlg_fig.size();
+		theApp.hDlg_fig.push_back(hDlg);
+	}
+/*	FILE *fp=fopen("track.txt","at");
+	if (umsg==WM_ACTIVATE || umsg==WM_NCACTIVATE || umsg==WM_ACTIVATEAPP || umsg==WM_GETICON || umsg==WM_KEYDOWN || umsg==WM_COMMAND || umsg==WM_GETDLGCODE )
+		fprintf(fp, "window %d, %x: msg: 0x%04x %s, wParam=%d\n", id, hDlg, umsg, wmstr[umsg].c_str(), wParam);
+	else if (umsg!=WM_NCHITTEST && umsg!=WM_SETCURSOR && umsg!=WM_MOUSEMOVE && umsg!=WM_NCMOUSEMOVE && umsg!=WM_WINDOWPOSCHANGING && umsg!= WM_WINDOWPOSCHANGED)
+		fprintf(fp, "window %d, %x: msg: 0x%04x %s\n", id, hDlg, umsg, wmstr[umsg].c_str());
+	fclose(fp); */
 	switch (umsg)
 	{
 	chHANDLE_DLGMSG (hDlg, WM_INITDIALOG, THE_CPLOTDLG->OnInitDialog);
@@ -119,106 +126,93 @@ BOOL CALLBACK DlgProc (HWND hDlg, UINT umsg, WPARAM wParam, LPARAM lParam)
 
 CGraffyDLL::CGraffyDLL()
 {
+//	if (!mutexPlot) mutexPlot = CreateMutex(0, 0, 0);
+	hEvent = CreateEvent(NULL, FALSE, FALSE, TEXT("AUXCONScriptEvent")); 
+
 }
 
 CGraffyDLL::~CGraffyDLL()
 {
-	for (vector<CAxis*>::iterator it=m_ax.begin(); it!=m_ax.end(); it++)
-		delete &it;
-	m_ax.clear();
+	for (vector<CPlotDlg*>::iterator it=fig.begin(); it!=fig.end(); it++)
+		delete *it;
+	fig.clear();
+	CloseHandle(hEvent);
 }
 
 vector<HANDLE> CGraffyDLL::figures()
 {
 	vector<HANDLE> out;
-	for (int k=0; k<nFigures; k++)
-		out.push_back(fig[k]);
+	for (vector<CPlotDlg*>::iterator it=fig.begin(); it!=fig.end(); it++) 
+		out.push_back(*it);
 	return out;
 }
 
 HANDLE  CGraffyDLL::findFigure(const char *caption, int *nFigs)
 {
 	char tp[256];
-	if (nFigs!=NULL) *nFigs = nFigures;
-	for (int i=0; i<nFigures; i++)
+	if (nFigs!=NULL) *nFigs = (int)fig.size();
+	for (vector<CPlotDlg*>::iterator it=fig.begin(); it!=fig.end(); it++) 
 	{
-		fig[i]->GetWindowText(tp, 256);
-		if (!strcmp(tp,caption)) return fig[i]->gcf;
+		(*it)->GetWindowText(tp, 256);
+		if (!strcmp(tp,caption)) return &(*it)->gcf;
 	}
 	return NULL;
 }
 
-HANDLE CGraffyDLL::openFigure(CRect *rt, const CSignals &data, HWND hWndAppl, int devID, double blocksize)
+HANDLE CGraffyDLL::openFigure(CRect *rt, HWND hWndAppl, int devID, double blocksize)
 {
-	return openFigure(rt, "", data, hWndAppl, devID, blocksize);
+	return openFigure(rt, "", hWndAppl, devID, blocksize);
 }
 
-HANDLE CGraffyDLL::openFigure(CRect *rt, const char* caption, const CSignals &data, HWND hWndAppl, int devID, double blocksize)
+HANDLE CGraffyDLL::openFigure(CRect *rt, const char* caption, HWND hWndAppl, int devID, double blocksize)
 {
-	CPlotDlg **tempFigHolder;
 	CString s;
-	tempFigHolder = new CPlotDlg*[nFigures+1];
-	for (int i=0; i<nFigures; i++)
-		tempFigHolder[i] = fig[i];
-	if (fig) delete[] fig;
-	GraffyRoot.hPar=&GraffyRoot; // The parent of root is self.
-	fig = tempFigHolder; //why this line should come before the next line---in a multithread situation, while the next line is executed for a new thread, still messages for the old member (thread) could come up... if fig is not updated yet, it would go astray in DlgProc (i.e., theApp.fig[i] would just crash...).... bjk 4/26/2016
-	GraffyRoot.m_dlg = static_cast <CWndDlg*>(tempFigHolder[nFigures] = new CPlotDlg(data, hInst, &GraffyRoot));
-	// The only purpose that GraffyRoot.m_dlg serves is to hold hWndAppl here...
-//	GraffyRoot.m_dlg->hParent = GraffyRoot.m_dlg;
-	GraffyRoot.m_dlg->hDlg = hWndAppl;
-	nFigures++;
-	//second time around... this is where crash occurs....
-	tempFigHolder[nFigures-1]->hDlg = CreateDialog(hInst, MAKEINTRESOURCE (IDD_PLOT), hWndAppl, (DLGPROC)DlgProc);
+	CPlotDlg *newFig;
+	fig.push_back(newFig = new CPlotDlg(hInst, &GraffyRoot)); // this needs before CreateDialogParam
 
-	if (tempFigHolder[nFigures-1]->hDlg==NULL) 
-	{	MessageBox(NULL,"Cannot Create graffy dialog box","",MB_OK);	return NULL;	}
+	if ((newFig->hDlg = CreateDialogParam(hInst, MAKEINTRESOURCE (IDD_PLOT), hWndAppl, (DLGPROC)DlgProc, NULL))==NULL)
+	{	MessageBox(NULL,"Cannot Create graffy dialog box","",MB_OK);	fig.pop_back(); delete newFig; return NULL;	}
 
-	tempFigHolder[nFigures-1]->devID = devID;
-	tempFigHolder[nFigures-1]->block = blocksize; // this is ignored. 7/15/2016 bjk
-	for (int i=0; i<nFigures-1; i++)
+	newFig->devID = devID;
+	newFig->block = blocksize; // this is ignored. 7/15/2016 bjk
+	for (size_t k=0; k<hDlg_fig.size(); k++)
 	{
 		RECT wndRt;
-		GetWindowRect(tempFigHolder[i]->hDlg, &wndRt);
-		if (*rt==wndRt) { rt->OffsetRect(20,32); i=0; }
+		GetWindowRect(hDlg_fig[k], &wndRt);
+		if (*rt==wndRt) { rt->OffsetRect(20,32); k=0; }
 	}
-	tempFigHolder[nFigures-1]->MoveWindow(rt);
+	newFig->MoveWindow(rt);
 	if (strlen(caption)==0) // if (caption=="")    NOT THE SAME  in WIN64
 	{
-		s.Format("Figure %d", nFigures);
-		tempFigHolder[nFigures-1]->SetWindowText(s);
+		s.Format("Figure %d", hDlg_fig.size());
+		newFig->SetWindowText(s);
 	}
 	else
-		tempFigHolder[nFigures-1]->SetWindowText(caption);
-	return tempFigHolder[nFigures-1]->gcf;
+		newFig->SetWindowText(caption);
+	return &newFig->gcf;
 }
 
 
-int CGraffyDLL::closeFigure(int figId)
+int CGraffyDLL::closeFigure(HANDLE h)
 {
-	// figId begins with 1.
-	int i;
-	if (figId > nFigures || figId < 0)
-		return 0;
-
-	if (figId==0) // delete all
+	//Returns the number of fig dlg windows remaining.
+	if (h==NULL) // delete all
 	{
-		for (i=0; i<nFigures; i++)
-			fig[i]->DestroyWindow();
-		delete[] fig;
+		for (vector<CPlotDlg*>::iterator it=fig.begin(); it!=fig.end(); it++)
+			(*it)->OnClose(); // inside OnClose(), delete *it is called.
+		fig.clear();
+		hDlg_fig.clear();
 	}
 	else
 	{
-		CPlotDlg **pdlg;
-		pdlg = new CPlotDlg*[nFigures-1];
-		for (i=0; i<figId-2; i++)
-			pdlg[i] = fig[i];
-		for (i=figId; i<nFigures; i++)
-			pdlg[i] = fig[i];
-		fig[figId-1]->DestroyWindow();
-		delete[] fig;
+		CFigure *cfig = (CFigure*)h;
+		for (vector<HWND>::iterator it=hDlg_fig.begin(); it!=hDlg_fig.end(); it++) 
+		{ if (cfig->m_dlg->hDlg==*it)  {hDlg_fig.erase(it); break;} }
+		for (vector<CPlotDlg*>::iterator it=fig.begin(); it!=fig.end(); it++) 
+		{ if (cfig->m_dlg==*it)  {/*(*it)->OnClose(); */fig.erase(it); break;} }
+		delete cfig->m_dlg;
 	}
-	return 1;
+	return (int)fig.size();
 }
 
 
@@ -242,39 +236,108 @@ BOOL APIENTRY DllMain( HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpRese
 
 GRAPHY_EXPORT HACCEL GetAccel(HANDLE hFig)
 {
-	for (int i=0; i<theApp.nFigures; i++)
-		if (hFig==theApp.fig[i]->gcf)  return theApp.fig[i]->GetAccel();
+	for (vector<CPlotDlg*>::iterator it=theApp.fig.begin(); it!=theApp.fig.end(); it++) 
+		if (hFig==&(*it)->gcf)  return (*it)->GetAccel();
 	return NULL;
 }
 
 GRAPHY_EXPORT HWND GetHWND_PlotDlg(HANDLE hFig)
 {
-	for (int i=0; i<theApp.nFigures; i++)
-		if (hFig==theApp.fig[i]->gcf)  return theApp.fig[i]->hDlg;
+	for (vector<CPlotDlg*>::iterator it=theApp.fig.begin(); it!=theApp.fig.end(); it++) 
+		if (hFig==&(*it)->gcf)  return (*it)->hDlg;
 	return NULL;
 }
 
 GRAPHY_EXPORT HWND GetHWND_PlotDlg2(HANDLE hFig)
 {
-	for (int i=0; i<theApp.nFigures; i++)
+	for (size_t i=0; i<theApp.fig.size(); i++)
 		if (hFig==theApp.fig[i])  return theApp.fig[i]->hDlg;
 	return NULL;
 }
 
+FILE* fpp;
 
-GRAPHY_EXPORT HANDLE OpenFigure(CRect *rt, const CSignals &data, HWND hWndAppl, int devID, double block)
+void thread4Plot (PVOID var)
 {
-	return theApp.openFigure(rt, "", data, hWndAppl, devID, block);
+	MSG         msg ;
+	CSignals gcf;
+	GRAFWNDDLGSTRUCT *in = (GRAFWNDDLGSTRUCT *)var;
+	if ((in->fig = OpenFigure(&in->rt, in->caption.c_str(), in->hWndAppl, in->devID, in->block))==NULL) 
+	{
+		PostThreadMessage(in->threadCaller, WM_PLOT_DONE, 0, 0);
+		return;
+	}
+
+	in->cfig = static_cast<CFigure *>(in->fig);
+	in->hAccel = GetAccel(in->fig);
+	in->threadPlot = GetCurrentThreadId(); 
+	PostThreadMessage(in->threadCaller, WM_PLOT_DONE, 0, 0);
+	
+//	fpp = fopen("log.txt","at"); fprintf(fpp,"thread=%d, fig handle = %x, hAccel=%x\n", in->threadID, in->fig, in->hAccel); fclose(fpp);
+	while (GetMessage (&msg, NULL, 0, 0))
+	{
+		if (msg.message==WM_DESTROY || !in->cfig->m_dlg)			break;
+//		fpp = fopen("log.txt","at"); fprintf(fpp,"thread %d %d, TranslateAccelerator(%4x, %4x, (msg)%4x) ...", GetCurrentThreadId(), in->threadID, in->cfig->m_dlg->hDlg, in->hAccel, msg.message); 
+ 		if (!TranslateAccelerator(in->cfig->m_dlg->hDlg, in->hAccel, &msg))
+		{
+//			fprintf(fpp,"... 0\n"); fclose(fpp);
+			if (msg.message==WM_KEYDOWN && msg.wParam==17 && GetParent(msg.hwnd)==in->cfig->m_dlg->hDlg) // Left control key for window size adjustment
+				msg.hwnd = in->cfig->m_dlg->hDlg;
+			if (!IsDialogMessage(msg.hwnd, &msg))
+			{
+				TranslateMessage (&msg) ;
+				DispatchMessage (&msg) ;
+			}
+		}
+		else
+		{
+//			fprintf(fpp,"... success\n"); fclose(fpp);
+		}
+	}
+	CloseFigure(in->fig);
+	delete in;
 }
 
-GRAPHY_EXPORT HANDLE OpenFigure(CRect *rt, const char *caption, const CSignals &data, HWND hWndAppl, int devID, double block)
-{
-	return theApp.openFigure(rt, caption, data, hWndAppl, devID, block);
+GRAPHY_EXPORT HANDLE OpenGraffy(CRect rt, const char *caption, DWORD threadID, HWND hApplDlg, GRAFWNDDLGSTRUCT &in)
+{ // in in in out
+	GRAFWNDDLGSTRUCT* pin = new GRAFWNDDLGSTRUCT;
+	pin->fig=NULL;
+	pin->threadCaller = threadID;
+	pin->caption = caption;
+	pin->rt = rt;
+	pin->hWndAppl = hApplDlg;
+	pin->block = 0.;
+	pin->devID = 0;
+	_beginthread (thread4Plot, 0, (void*)pin);
+//	DWORD dw = WaitForSingleObject(hEvent, INFINITE);
+
+	MSG         msg ;
+	while (GetMessage (&msg, NULL, 0, 0))
+	{
+		if (msg.message==WM_PLOT_DONE)
+		{
+			in = *pin;
+			break;
+		}
+	}
+	return pin->fig;
 }
 
-GRAPHY_EXPORT int CloseFigure(int id)
+
+GRAPHY_EXPORT HANDLE OpenFigure(CRect *rt, HWND hWndAppl, int devID, double block)
 {
-	return theApp.closeFigure(id);
+	return theApp.openFigure(rt, "", hWndAppl, devID, block);
+}
+
+GRAPHY_EXPORT HANDLE OpenFigure(CRect *rt, const char *caption, HWND hWndAppl, int devID, double block)
+{
+	return theApp.openFigure(rt, caption, hWndAppl, devID, block);
+}
+
+GRAPHY_EXPORT int CloseFigure(HANDLE h)
+{
+//	delete h;
+	return theApp.closeFigure(h);
 }
 
 GRAPHY_EXPORT HANDLE FindFigure(const char* caption, int *nFigs)
@@ -290,9 +353,9 @@ GRAPHY_EXPORT vector<HANDLE> graffy_Figures()
 GRAPHY_EXPORT HANDLE GetGraffyHandle(int figID)
 {
 	string str;
-	for (int k=0; k<theApp.nFigures; k++) 
+	for (size_t k=0; k<theApp.fig.size(); k++) 
 	{
-		CFigure* cfig = theApp.fig[k]->gcf;
+		CFigure* cfig = &theApp.fig[k]->gcf;
 		if ((int)cfig->hPar==figID) return cfig->hPar;
 		for (vector<CAxis*>::iterator paxit=cfig->ax.begin(); paxit!=cfig->ax.end(); paxit++) 
 		{
@@ -310,20 +373,20 @@ GRAPHY_EXPORT HANDLE GetGraffyHandle(int figID)
 }
 
 GRAPHY_EXPORT HANDLE GCF(CSignals *figID)
-{
+{//set gcf with figID
 	int ext;
 	char buf[64];
 	string str;
 	double val;
 	int res(-1);
 	if (figID->GetType()==CSIG_SCALAR) val = figID->value();
-	for (int k=0; k<theApp.nFigures; k++) 
+	for (size_t k=0; k<theApp.fig.size(); k++) 
 	{
 		theApp.fig[k]->GetWindowText(buf, sizeof(buf));
 		str = buf;
 		if (figID->GetType()==CSIG_STRING)
 		{
-			if (str==figID->string()) return theApp.fig[k]->gcf;
+			if (str==figID->string()) return &theApp.fig[k]->gcf;
 		}
 		else if (figID->GetType()==CSIG_SCALAR)
 		{
@@ -333,25 +396,33 @@ GRAPHY_EXPORT HANDLE GCF(CSignals *figID)
 			{
 				int dummult = 100000;
 				if ((int)(val*dummult)==ext*dummult)	
-					res=k;
+					res=(int)k;
 			}
 		}
 	}
 	if (res<0)
 		return NULL;
 	else
-		return theApp.fig[res]->gcf;
+		return &theApp.fig[res]->gcf;
 
 }
 
-GRAPHY_EXPORT int GetFigID(HANDLE h, CSignals& out)
+GRAPHY_EXPORT HANDLE GetGraffyHandle(HWND h)
+{
+	for (size_t k=0; k<theApp.fig.size(); k++) 
+		if (theApp.fig[k]->hDlg == h)
+			return &theApp.fig[k]->gcf;
+	return NULL;
+}
+
+GRAPHY_EXPORT int GetFigID(HWND h, CSignals& out)
 {
 	char buf[64];
 	int ext, res(0);
 	string str;
-	for (int k=0; k<theApp.nFigures; k++) 
+	for (size_t k=0; k<theApp.fig.size(); k++) 
 	{
-		if (theApp.fig[k]->gcf==h)
+		if (theApp.fig[k]->hDlg == h)
 		{
 			res=1;
 			theApp.fig[k]->GetWindowText(buf, sizeof(buf));
@@ -366,7 +437,35 @@ GRAPHY_EXPORT int GetFigID(HANDLE h, CSignals& out)
 			{
 				out.SetString(str.c_str());
 			}
-			k=theApp.nFigures+1;
+			break;
+		}
+	}
+	return res;
+}
+
+GRAPHY_EXPORT int GetFigID(HANDLE h, CSignals& out)
+{
+	char buf[64];
+	int ext, res(0);
+	string str;
+	for (size_t k=0; k<theApp.fig.size(); k++) 
+	{
+		if (&theApp.fig[k]->gcf==h)
+		{
+			res=1;
+			theApp.fig[k]->GetWindowText(buf, sizeof(buf));
+			str = buf;
+			if (str.find("Figure ")==0) 
+			{
+				str.erase(0, string("Figure ").length());
+				if (sscanf(str.c_str(), "%d", &ext)>0)	
+					out.SetValue((double)ext);
+			}
+			else
+			{
+				out.SetString(str.c_str());
+			}
+			break;
 		}
 	}
 	return res;
@@ -375,9 +474,9 @@ GRAPHY_EXPORT int GetFigID(HANDLE h, CSignals& out)
 GRAPHY_EXPORT HANDLE GCA(HANDLE _fig)
 {
 	CFigure *fig = static_cast<CFigure *>(_fig);
-	for (int k=0; k<theApp.nFigures; k++) 
+	for (size_t k=0; k<theApp.fig.size(); k++) 
 	{
-		if (theApp.fig[k]->gcf==_fig)
+		if (&theApp.fig[k]->gcf==_fig)
 			return theApp.fig[k]->gca;
 	}
 	return NULL;
@@ -388,7 +487,7 @@ GRAPHY_EXPORT HANDLE  AddAxis(HANDLE _fig, double x0, double y0, double wid, dou
 	CFigure *fig = static_cast<CFigure *>(_fig);
 	CPosition pos(x0, y0, wid, hei);
 	CAxis * ax = fig->axes(pos);
-	theApp.fig[theApp.nFigures-1]->gca = ax; 
+	theApp.fig.back()->gca = ax; 
 	return ax;
 }
 
@@ -438,28 +537,9 @@ GRAPHY_EXPORT HANDLE  PlotDouble(HANDLE _ax, int len, double *x, double *y, COLO
 
 void _deleteObj (CFigure *hFig)
 {
-	int i, j, ind2Del;
-	bool loop(true);
-	for (i=0; i<theApp.nFigures && loop; i++)
-		if (hFig==theApp.fig[i]->gcf) 
-			{ind2Del=i; loop=false;}
-	if (loop) return ; // If hFig is a ghost, do nothing.
-	CPlotDlg **pFigs;
-	pFigs = new CPlotDlg*[theApp.nFigures-1];
-	//storing objects to keep
-	for (i=0, j=0; i<theApp.nFigures; i++)
-		if (i!=ind2Del) 
-			pFigs[j++] = theApp.fig[i];
-		else
-		{
-			theApp.fig[i]->DestroyWindow();
-			delete theApp.fig[i];
-		}
-	delete hFig;
-		
-	delete[] theApp.fig;
-	theApp.fig = pFigs;
-	theApp.nFigures--;
+	for (vector<CPlotDlg*>::iterator it=theApp.fig.begin(); it!=theApp.fig.end(); it++) 
+		if (hFig==&(*it)->gcf) 
+		{delete *it; /*theApp.fig.erase(it); */break;}
 }
 
 GRAPHY_EXPORT void deleteObj (HANDLE h)

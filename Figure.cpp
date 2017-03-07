@@ -72,12 +72,18 @@ void CPosition::Set(CRect windRect, CRect axRect)
 	y0 = (double)(windRect.bottom-axRect.bottom) / windRect.Height();
 }
 
-CFigure::CFigure(CWndDlg * base, CGobj* pParent)
+CFigure::CFigure()
 {
-	m_dlg = base;
-	hPar = pParent;
 	color = RGB(230, 230, 210);
 	type = GRAFFY_figure;
+}
+
+CFigure::CFigure(CWndDlg * base, CGobj* pParent)
+{
+	color = RGB(230, 230, 210);
+	type = GRAFFY_figure;
+	m_dlg = base;
+	hPar = pParent;
 	hPar->child.push_back(this);
 }
 

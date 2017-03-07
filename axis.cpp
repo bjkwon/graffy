@@ -338,6 +338,11 @@ GRAPHY_EXPORT CLine * CAxis::plot(double *xdata, CSignal &ydata, COLORREF col, c
 	{
 		ylim[0] = getMin(ydata.nSamples, ydata.buf);
 		ylim[1] = getMax(ydata.nSamples, ydata.buf);	
+		if (ylim[0]==ylim[1])
+		{
+			ylim[0] -= 1.;
+			ylim[1] += 1.;
+		}
 		//double diff = ylim[1]-ylim[0];
 		//ylim[0] -= diff/10; 
 		//ylim[1] += diff/10;

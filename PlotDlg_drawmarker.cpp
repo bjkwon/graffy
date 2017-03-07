@@ -10,7 +10,6 @@ void CPlotDlg::DrawMarker(CDC dc, CLine* mline, vector<POINT> draw)
 	if (!mline) return;
 	int radius(mline->markersize);
 	CRect circleRt;
-	CPen pen;
 	vector<POINT> mark;
 	POINT pt;
 	int res;
@@ -18,8 +17,7 @@ void CPlotDlg::DrawMarker(CDC dc, CLine* mline, vector<POINT> draw)
 	HBRUSH hBr;
 	HGDIOBJ hOrigBrush(NULL);
 	if (mline->markerColor==-1) mline->markerColor = mline->color;
-	pen.CreatePen(PS_SOLID, 1, mline->markerColor);
-	dc.SelectObject(&pen);
+	dc.CreatePen(PS_SOLID, 1, mline->markerColor);
 	switch(mline->symbol)
 	{
 	case 'o':
@@ -236,5 +234,4 @@ void CPlotDlg::DrawMarker(CDC dc, CLine* mline, vector<POINT> draw)
 		}
 		break;		
 	}
-	pen.DeleteObject();
 }

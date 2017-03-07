@@ -4,8 +4,8 @@ CTick::CTick(CWndDlg * base)
 :automatic(true), mult(1.), offset(0.), labelPos(7), size(4)
 {
 	m_dlg = base;
-	font.CreateFont(15, 0, 0, 0, FW_NORMAL, 0, 0, 0, ANSI_CHARSET, 
-		OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Arial");
+	//font.CreateFont(15, 0, 0, 0, FW_NORMAL, 0, 0, 0, ANSI_CHARSET, 
+	//	OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Arial");
 	type = GRAFFY_tick;
 	gap4next.x = 5;
 	gap4next.y = 2;
