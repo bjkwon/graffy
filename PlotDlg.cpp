@@ -25,8 +25,6 @@ extern HWND hPlotDlgCurrent;
 
 CPosition SpecAxPos(.75, .6, .22, .35);
 
-CAstSig needcomp;
-
 FILE *fp;
 
 #define RMSDB(BUF,FORMAT1,FORMAT2,X) { double rms;	if ((rms=X)==-1.*std::numeric_limits<double>::infinity()) strcpy(BUF, FORMAT1); else sprintf(BUF, FORMAT2, rms); }

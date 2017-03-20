@@ -502,9 +502,9 @@ GRAPHY_EXPORT void SetRange(HANDLE _ax, const char xy, double x1, double x2)
 {
 	CAxis *ax = static_cast<CAxis *>(_ax);
 	if (xy=='x')
-		ax->xlim[0]=x1, ax->xlim[0]=x2;
+		ax->xlim[0]=x1, ax->xlim[1]=x2;
 	else
-		ax->ylim[0]=x1, ax->ylim[0]=x2;
+		ax->ylim[0]=x1, ax->ylim[1]=x2;
 }
 
 GRAPHY_EXPORT HANDLE PlotCSignals(HANDLE _ax, CSignal &data, COLORREF col, char cymbol, LineStyle ls)

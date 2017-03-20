@@ -9,3 +9,6 @@ versionLog
 2.10
 Now IDD_PLOT dialog has Topmost ON. --> This resolves **the z-order confusion problem in Windows 7.
 (** When multiple IDD_PLOT dialogs are generated, the last generated one hide in the background even when it is clicked and activated.
+
+3/20/2017
+2.11 SetRange bug fixed
