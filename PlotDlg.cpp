@@ -265,15 +265,21 @@ vector<POINT>  CPlotDlg::makeDrawVector(CSignal *p, CAxis *pax)
 	if (estimatedNSamples>multiplier*nPixels) // Quick drawing // condition: the whole nSamples points are drawn by nPixels points in pax->rcAx
 	{
 		do {
-		maax=-1.e100;  miin=1.e100;
 		remnant += nSamplesPerPixel - (int)(nSamplesPerPixel);
 		if (remnant>1) {adder = 1; remnant -= 1.;}
 		else adder = 0;
-		for (id=beginID; id<min(beginID+(int)(nSamplesPerPixel)+adder, p->nSamples); id++)
+		id = min(beginID+(int)(nSamplesPerPixel)+adder, p->nSamples);
+		if (!p->IsLogical())
 		{
-			miin = min(miin, p->buf[id]);
-			maax = max(maax, p->buf[id]);
-//			if (p->GetType()==CSIG_AUDIO)	{	count++;	cum += max(miin*miin, maax*maax);  }
+			body temp(p->buf+beginID, id-beginID);
+			miin = temp.Min();
+			maax = temp.Max();
+		}
+		else
+		{
+			body temp(p->logbuf+beginID, id-beginID);
+			miin = temp.Min();
+			maax = temp.Max();
 		}
 		if (miin!=1.e100) 
 		{
@@ -284,20 +290,18 @@ vector<POINT>  CPlotDlg::makeDrawVector(CSignal *p, CAxis *pax)
 				draw.push_back(pt);
 				pt = pax->double2pixelpt(pax->m_ln.front()->xdata[beginID], maax, NULL);
 				pt.y = min(max(pax->rcAx.top, pt.y), pax->rcAx.bottom);
-				draw.push_back(pt);
 			}
 			else
 			{
-				if (p->GetType()==CSIG_AUDIO)
+				if (p->GetType()==CSIG_AUDIO) // for audio, plot(x)
 				{
 					pt = pax->double2pixelpt((double)beginID/(double)fs+p->tmark/1000., miin, NULL);
 					pt.y = min(max(pax->rcAx.top, pt.y), pax->rcAx.bottom);
 					draw.push_back(pt);
 					pt = pax->double2pixelpt((double)beginID/(double)fs+p->tmark/1000., maax, NULL);
 					pt.y = min(max(pax->rcAx.top, pt.y), pax->rcAx.bottom);
-					draw.push_back(pt);
 				}
-				else
+				else // for non-audio, plot(x)
 				{
 					double xval = pax->xlim[0] + (double) (beginID-ind1) / (ind2-ind1) * (pax->xlim[1]-pax->xlim[0]);
 					pt = pax->double2pixelpt((double)xval, miin, NULL);
@@ -305,11 +309,13 @@ vector<POINT>  CPlotDlg::makeDrawVector(CSignal *p, CAxis *pax)
 					draw.push_back(pt);
 					pt = pax->double2pixelpt((double)xval, maax, NULL);
 					pt.y = min(max(pax->rcAx.top, pt.y), pax->rcAx.bottom);
-					draw.push_back(pt);
 					if (id>ind2-ind1-100)
 						miin=11111;
 				}
 			}
+			if (p->IsLogical() && maax>0.) 
+				pt.y--; // to show inside the axis box
+			draw.push_back(pt);
 		}
 		beginID  = id; 
 	} while (id<min(p->nSamples, ind2));
@@ -317,11 +323,18 @@ vector<POINT>  CPlotDlg::makeDrawVector(CSignal *p, CAxis *pax)
 	else // Full drawing 
 	{
 		if (p->GetType()==CSIG_AUDIO)
-			for (int k=ind1; k<ind2; k++)
-			{
-				pt = pax->double2pixelpt((double)k/fs, p->buf[k-inttmark], NULL);
-				draw.push_back(pt);
-			}
+			if (p->IsLogical())
+				for (int k=ind1; k<ind2; k++)
+				{
+					pt = pax->double2pixelpt((double)k/fs, (double)p->logbuf[k-inttmark], NULL);
+					draw.push_back(pt);
+				}
+			else
+				for (int k=ind1; k<ind2; k++)
+				{
+					pt = pax->double2pixelpt((double)k/fs, p->buf[k-inttmark], NULL);
+					draw.push_back(pt);
+				}
 		else
 		{
 			bool wasbull(0);
@@ -381,7 +394,6 @@ void CPlotDlg::OnPaint()
 	CDC dc(hdc, hDlg);
 	CClientDC dc2(hDlg);
 	CPoint pt;
-	int nDrawPt;
 	vector<POINT> draw;
 	char buf[512], buf2[512];
 	CRect clientRt;
@@ -430,11 +442,11 @@ void CPlotDlg::OnPaint()
 						{
 							if ((*liit)->lineStyle!=LineStyle_noline)
 								if (draw[draw.size()-1].x <= (*paxit)->axRect.right)
-									dc.Polyline(draw.data(), draw.size());
+									dc.Polyline(draw.data(), (int)draw.size());
 								else
 								{
 									int shortlen(-1);
-									nDrawPt = draw.size();
+									int nDrawPt = (int)draw.size();
 									for (int p = nDrawPt-1; p>0; p--)
 										if (draw[p].x<=(*paxit)->axRect.right)
 											shortlen = p, p=-1;
@@ -494,7 +506,8 @@ void CPlotDlg::OnPaint()
 				CSignals _sig;
 				if (GetCSignalsInRange(0, pax0, _sig, 0))
 				{
-					if (_sig.next==NULL)
+					if (_sig.IsLogical())	strcpy(buf, "logical");
+					else if (_sig.next==NULL)
 					{
 						RMSDB(buf,"-Inf dB","%.1f dB",_sig.RMS())
 					}
@@ -609,7 +622,7 @@ void CPlotDlg::DrawTicks(CDC *pDC, CAxis *pax, char xy)
 			}
 			else
 				sprintfFloat(value, 3, label, 256);
-			GetTextExtentPoint32(hdc, label, strlen(label), &sz);
+			GetTextExtentPoint32(hdc, label, (int)strlen(label), &sz);
 			if (iabs(loc-lastpt2Draw)> sz.cx + pax->xtick.gap4next.x) // only if there's enough gap, Textout
 			{
 				pDC->TextOut(loc, pax->rcAx.bottom + pax->xtick.labelPos, label);
@@ -646,7 +659,7 @@ void CPlotDlg::DrawTicks(CDC *pDC, CAxis *pax, char xy)
 				sprintf(label, pax->ytick.format, value);
 			else
 				sprintfFloat(value, max(0,min(3,1-(int)scalemant)), label, 256);
-			GetTextExtentPoint32(hdc, label, strlen(label), &sz);
+			GetTextExtentPoint32(hdc, label, (int)strlen(label), &sz);
 			if (iabs(loc-lastpt2Draw)> sz.cy + pax->xtick.gap4next.y) // only if there's enough gap, Textout
 			{
 				pDC->TextOut(pax->rcAx.left - pax->ytick.labelPos, loc-fnt.lfHeight/2, label);
@@ -718,7 +731,6 @@ CRect CPlotDlg::DrawAxis(CDC *pDC, PAINTSTRUCT *ps, CAxis *pax)
 
 void CPlotDlg::OnSize(UINT nType, int cx, int cy) 
 {
-	int res;
 	int new1, new2;
 	int sigtype(-1);
 	if (gcf.ax.size()>0 && gcf.ax.front()->m_ln.size()>0)
@@ -733,7 +745,7 @@ void CPlotDlg::OnSize(UINT nType, int cx, int cy)
 		{
 			sbarWidth[2]=120; sbarWidth[3]=125; sbarWidth[4]=177; sbarWidth[5]=229;
 		}
-		res = ::SendMessage (hStatusbar, SB_SETPARTS, 12, (LPARAM)sbarWidth);
+		::SendMessage (hStatusbar, SB_SETPARTS, 12, (LPARAM)sbarWidth);
 		SetHWND_GRAFFY(hDlg);
 #ifndef NO_PLAYSND
 		SetHWND_SIGPROC(GetParent(hDlg));
@@ -787,7 +799,7 @@ void CPlotDlg::OnRButtonUp(UINT nFlags, CPoint point)
 	if (pax!=NULL)
 	{
 		int iSel(-1);
-		for (size_t i=0; i<gcf.ax.size(); i++) if (pax==gcf.ax[i]) iSel=i;
+		for (size_t i=0; i<gcf.ax.size(); i++) if (pax==gcf.ax[i]) iSel=(int)i;
 		//Following the convention
 		subMenu.EnableMenuItem(IDM_PLAY, iSel==0? MF_ENABLED : MF_GRAYED);
 		subMenu.EnableMenuItem(IDM_WAVWRITE, iSel==0? MF_ENABLED : MF_GRAYED);
@@ -1595,9 +1607,7 @@ unsigned _int8 GetMousePosAxis(CPoint pt, CAxis* pax)
 	if (pax->axRect.PtInRect(pt)) return AXCORE;
 	unsigned _int8 res(0);
 	if (pax->xtick.rt.PtInRect(pt)) res = GRAF_REG1 << 2;
-//	if (pax->xtick2.rt.PtInRect(pt)) res = GRAF_REG2 << 2;
 	if (pax->ytick.rt.PtInRect(pt)) res += GRAF_REG1;
-//	if (pax->ytick2.rt.PtInRect(pt)) res += GRAF_REG2;
 
 	return res;
 }
@@ -1691,7 +1701,8 @@ void CPlotDlg::ShowStatusSelectionOfRange(CAxis *pax, const char *swich)
 			CSignals _sig = pax->m_ln[0]->sig;
 			if (_sig.GetType()==CSIG_AUDIO)
 			{
-				if (GetCSignalsInRange(1, pax, _sig, 0))
+				if (_sig.IsLogical())	strcpy(buf, "logical");
+				else if (GetCSignalsInRange(1, pax, _sig, 0))
 				{
 					if (_sig.next==NULL)
 					{
@@ -1708,10 +1719,10 @@ void CPlotDlg::ShowStatusSelectionOfRange(CAxis *pax, const char *swich)
 						else RMSDB(buf2,"(R)-Inf","(R)%.1fdB",tpsig->RMS())
 						sprintf(buf, "%s%s", buf1, buf2);
 					}
-					::SendMessage (hStatusbar, SB_SETTEXT, 8, (LPARAM)buf);
-					sprintf(buf,"%.3fs",pax->pix2timepoint(curRange.px1));
-					sprintf(buf2,"%.3fs",pax->pix2timepoint(curRange.px2));
 				}
+				::SendMessage (hStatusbar, SB_SETTEXT, 8, (LPARAM)buf);
+				sprintf(buf,"%.3fs",pax->pix2timepoint(curRange.px1));
+				sprintf(buf2,"%.3fs",pax->pix2timepoint(curRange.px2));
 			}
 			else
 			{

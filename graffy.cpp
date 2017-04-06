@@ -62,7 +62,7 @@ INT_PTR CALLBACK DlgProc (HWND hDlg, UINT umsg, WPARAM wParam, LPARAM lParam)
 	if (id<0) // This means theApp.hDlg_fig has not gotten hDlg for the created window, i.e., processing early messages prior to WM_INITDIALOG
 	{ 
 		//then add hDlg to the vector
-		id = theApp.hDlg_fig.size();
+		id = (int)theApp.hDlg_fig.size();
 		theApp.hDlg_fig.push_back(hDlg);
 	}
 /*	FILE *fp=fopen("track.txt","at");
