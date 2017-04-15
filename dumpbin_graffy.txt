@@ -1,0 +1,2 @@
+c:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\amd64>dumpbin.exe /EXPORTS c:\devploy\xcom\Win32\Debug\graffy32.dll >> c:\temp\graffy32_dumbin.txt
+c:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\amd64>dumpbin.exe /EXPORTS c:\devploy\xcom\x64\Debug\graffy64.dll >> c:\temp\graffy64_dumbin.txt

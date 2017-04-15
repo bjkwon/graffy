@@ -45,6 +45,7 @@ CAxis::CAxis()
 	pos.width=0.;
 	pos.height=0.;
 	visible = true;
+	xlim[0] = 0; 
 	xlim[0]=0.;
 	ylim[0]=0.;
 	xlim[1] = xlim[0]-1.; //reverse the large-small, so indicate uninitialized for lim
@@ -275,7 +276,6 @@ void CAxis::setxticks()
 	xtick.set(out, vxdata, nSamples);
 }
 
-
 GRAPHY_EXPORT CLine * CAxis::plot(int length, double *y, COLORREF col, char cymbol, LineStyle ls)
 {
 	int i;
@@ -288,15 +288,12 @@ GRAPHY_EXPORT CLine * CAxis::plot(int length, double *y, COLORREF col, char cymb
 	return out;
 }
 
-
-
 GRAPHY_EXPORT CLine * CAxis::plot(double *xdata, CSignal &ydata, COLORREF col, char cymbol, LineStyle ls)
 {
 	double maax(-1.e100), miin(1.e100);
 	CLine *in = new CLine(m_dlg, this, 0);
 	in->sig = ydata;
 	double dfs = (double)ydata.GetFs();
-	xlim[0] = 0; xlim[1]=-1;
 	if (xdata!=NULL)
 	{
 		delete[] in->xdata;
@@ -309,7 +306,7 @@ GRAPHY_EXPORT CLine * CAxis::plot(double *xdata, CSignal &ydata, COLORREF col, c
 	{
 		if (xdata==NULL)	{
 			if (ydata.GetType()==CSIG_AUDIO)	
-				xlim[1] = max( xlim[1], (p->dur()+p->tmark)/1000 ); 
+				xlim[1] = max( xlim[1], p->endt()/1000 ); 
 			else 
 				xlim[0] = 1, xlim[1] = max( xlim[1], (double)p->nSamples ) ; 
 		}
@@ -352,7 +349,6 @@ GRAPHY_EXPORT CLine * CAxis::plot(double *xdata, CSignal &ydata, COLORREF col, c
 	m_dlg->InvalidateRect(NULL);
 	return in; //This is the line object that was just created.
 }
-
 
 GRAPHY_EXPORT CLine * CAxis::plot(int length, double *x, double *y, COLORREF col, char cymbol, LineStyle ls)
 {

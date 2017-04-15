@@ -12,3 +12,6 @@ Now IDD_PLOT dialog has Topmost ON. --> This resolves **the z-order confusion pr
 
 3/20/2017
 2.11 SetRange bug fixed
+
+4/15/2017
+2.12 Bug fix: 1) When stereo sounds are plotted, xlim[1] was reset in each call to CAxis::plot, causing the xlim to be determined by the second channel (R-channel), instead of max (L-chan, R-chan). 2) for x64, function address for OpenFigure in graffy64.dll was not set correctly, so no plot calls in Auxtra.cpp were working.
