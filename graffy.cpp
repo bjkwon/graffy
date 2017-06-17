@@ -9,6 +9,11 @@
 
 map<unsigned int, string> wmstr;
 AUDFRET_EXP void makewmstr(map<unsigned int, string> &wmstr);
+AUDFRET_EXP int spyWM(HWND hDlg, UINT umsg, WPARAM wParam, LPARAM lParam, char* const fname, map<unsigned int, string> wmstr, vector<UINT> msg2excl, char* const tagstr);
+AUDFRET_EXP int spyWM2(HWND hDlg, UINT umsg, WPARAM wParam, LPARAM lParam, char* const fname, map<unsigned int, string> wmstr, vector<UINT> msg2excl, char* const tagstr);
+AUDFRET_EXP int SpyGetMessage(MSG msg, char* const fname, map<unsigned int, string> wmstr, vector<UINT> msg2excl, char* const tagstr);
+AUDFRET_EXP int SpyGetMessage2(MSG msg, char* const fname, map<unsigned int, string> wmstr, vector<UINT> msg2excl, char* const tagstr);
+vector<UINT> exc;
 
 HINSTANCE hInst;
 CPlotDlg* childfig;
@@ -58,6 +63,28 @@ int getID4hDlg(HWND hDlg)
 
 INT_PTR CALLBACK DlgProc (HWND hDlg, UINT umsg, WPARAM wParam, LPARAM lParam)
 {
+	if (exc.size()==0)
+	{
+		exc.push_back(WM_NCHITTEST);
+		exc.push_back(WM_SETCURSOR);
+		exc.push_back(WM_MOUSEMOVE);
+		exc.push_back(WM_NCMOUSEMOVE);
+		exc.push_back(WM_WINDOWPOSCHANGING);
+		exc.push_back(WM_WINDOWPOSCHANGED);
+		exc.push_back(WM_CTLCOLORDLG);
+		exc.push_back(WM_NCPAINT);
+		exc.push_back(WM_GETMINMAXINFO);
+		exc.push_back(WM_MOVE);
+		exc.push_back(WM_MOVING);
+		exc.push_back(WM_NCMOUSEMOVE);
+		exc.push_back(WM_ERASEBKGND);
+		//exc.push_back(WM_ACTIVATE);
+		//exc.push_back(WM_ACTIVATEAPP);
+		//exc.push_back(WM_SETFOCUS);
+		//exc.push_back(WM_KILLFOCUS);
+		//exc.push_back(WM_NCACTIVATE);
+		//exc.push_back(WM_SHOWWINDOW);
+	}
 	int id = getID4hDlg(hDlg);
 	if (id<0) // This means theApp.hDlg_fig has not gotten hDlg for the created window, i.e., processing early messages prior to WM_INITDIALOG
 	{ 
@@ -65,12 +92,9 @@ INT_PTR CALLBACK DlgProc (HWND hDlg, UINT umsg, WPARAM wParam, LPARAM lParam)
 		id = (int)theApp.hDlg_fig.size();
 		theApp.hDlg_fig.push_back(hDlg);
 	}
-/*	FILE *fp=fopen("track.txt","at");
-	if (umsg==WM_ACTIVATE || umsg==WM_NCACTIVATE || umsg==WM_ACTIVATEAPP || umsg==WM_GETICON || umsg==WM_KEYDOWN || umsg==WM_COMMAND || umsg==WM_GETDLGCODE )
-		fprintf(fp, "window %d, %x: msg: 0x%04x %s, wParam=%d\n", id, hDlg, umsg, wmstr[umsg].c_str(), wParam);
-	else if (umsg!=WM_NCHITTEST && umsg!=WM_SETCURSOR && umsg!=WM_MOUSEMOVE && umsg!=WM_NCMOUSEMOVE && umsg!=WM_WINDOWPOSCHANGING && umsg!= WM_WINDOWPOSCHANGED)
-		fprintf(fp, "window %d, %x: msg: 0x%04x %s\n", id, hDlg, umsg, wmstr[umsg].c_str());
-	fclose(fp); */
+//	char buf[32];
+//	sprintf(buf, "%d: ", id);
+//	spyWM(hDlg, umsg, wParam, lParam, "track.txt", wmstr, exc, buf);
 	switch (umsg)
 	{
 	chHANDLE_DLGMSG (hDlg, WM_INITDIALOG, THE_CPLOTDLG->OnInitDialog);
@@ -93,11 +117,11 @@ INT_PTR CALLBACK DlgProc (HWND hDlg, UINT umsg, WPARAM wParam, LPARAM lParam)
 	//	PostMessage(hDlg, WM_FIGURE_CLICKED, (WPARAM)THE_CPLOTDLG->gcf, 0);
 	//	return FALSE;
 
-	case WM_MOUSEACTIVATE: //0x0021
-	case WM_NCLBUTTONDOWN: //0x00A1
-		THE_CPLOTDLG->SetGCF();
-		return FALSE;
-		break;
+//	case WM_MOUSEACTIVATE: //0x0021
+//	case WM_NCLBUTTONDOWN: //0x00A1
+//		THE_CPLOTDLG->SetGCF();
+//		return FALSE;
+//		break;
 
 //	case WM_NCACTIVATE: // x0086
 //		PostMessage(hDlg, WM_FIGURE_CLICKED, (WPARAM)THE_CPLOTDLG->gcf, 0);
@@ -267,31 +291,26 @@ void thread4Plot (PVOID var)
 		PostThreadMessage(in->threadCaller, WM_PLOT_DONE, 0, 0);
 		return;
 	}
-
 	in->cfig = static_cast<CFigure *>(in->fig);
 	in->hAccel = GetAccel(in->fig);
 	in->threadPlot = GetCurrentThreadId(); 
 	PostThreadMessage(in->threadCaller, WM_PLOT_DONE, 0, 0);
-	
-//	fpp = fopen("log.txt","at"); fprintf(fpp,"thread=%d, fig handle = %x, hAccel=%x\n", in->threadID, in->fig, in->hAccel); fclose(fpp);
 	while (GetMessage (&msg, NULL, 0, 0))
 	{
 		if (msg.message==WM_DESTROY || !in->cfig->m_dlg)			break;
-//		fpp = fopen("log.txt","at"); fprintf(fpp,"thread %d %d, TranslateAccelerator(%4x, %4x, (msg)%4x) ...", GetCurrentThreadId(), in->threadID, in->cfig->m_dlg->hDlg, in->hAccel, msg.message); 
  		if (!TranslateAccelerator(in->cfig->m_dlg->hDlg, in->hAccel, &msg))
 		{
-//			fprintf(fpp,"... 0\n"); fclose(fpp);
+			if (msg.message==WM_KEYDOWN)
 			if (msg.message==WM_KEYDOWN && msg.wParam==17 && GetParent(msg.hwnd)==in->cfig->m_dlg->hDlg) // Left control key for window size adjustment
 				msg.hwnd = in->cfig->m_dlg->hDlg;
 			if (!IsDialogMessage(msg.hwnd, &msg))
 			{
+//				SpyGetMessage(msg, "track.txt", wmstr, dum, "Dispatching ");
 				TranslateMessage (&msg) ;
 				DispatchMessage (&msg) ;
 			}
-		}
-		else
-		{
-//			fprintf(fpp,"... success\n"); fclose(fpp);
+//			else
+//				SpyGetMessage2(msg, "track.txt", wmstr, dum, "Dialog ");
 		}
 	}
 	CloseFigure(in->fig);
