@@ -2,7 +2,7 @@
 #include "supportFcn.h"
 
 CGobj::CGobj()
-:m_dlg(NULL), hPar(NULL), visible(true)
+:m_dlg(NULL), hPar(NULL), visible(true), hChild(NULL)
 {
 	type = GRAFFY_root;
 }
@@ -51,7 +51,7 @@ void CPosition::AdjustPos2FixLocation(CRect oldrt, CRect newrt)
 }
 
 CRect CPosition::GetRect(CRect windRect)
-{ // from pos to RECT
+{ // from pos to RECT --> why not use this for general purposes?  8/14/2017
 	POINT org;
 	int windWidth, windHeight, axHeight, axWidth;
 	windWidth = windRect.right-windRect.left;

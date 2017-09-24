@@ -70,7 +70,27 @@ typedef struct tagRANGE_TP
 /////////////////////////////////////////////////////////////////////////////
 // CPlotDlg dialog
 
+typedef struct tagSTATUSBARINFO
+{
+	double xBegin;
+	double xEnd;
+	double xCur;
+	double yCur;
+	double xSelBegin;
+	double xSelEnd;
+//	double rms;
+	bool initialshow;
+	vector<CAxis *> vax;
+} STATUSBARINFO;
 
+
+enum SHOWSTATUS
+{
+	CLEAR,
+	CURSOR_LOCATION,
+	CURSOR_LOCATION_SPECTRUM,
+	FULL,
+};
 
 class CPlotDlg : public CWndDlg
 {
@@ -101,6 +121,7 @@ public:
 	CPlotDlg(); 
 	CPlotDlg(HINSTANCE hInstance, CGobj *hPar = NULL);   // standard constructor
 	~CPlotDlg();
+	char RMSselected[16];
 private:
 	bool spgram;
 	bool levelView;
@@ -109,6 +130,7 @@ private:
 	bool axis_expanding;
 	unsigned short ClickOn;
 	unsigned short MoveOn;
+	STATUSBARINFO sbinfo;
 	CPoint clickedPt;
 	CPoint lastPtDrawn;
 	HWND hStatusbar;
@@ -130,6 +152,7 @@ private:
 	CBrush hQuickSolidBrush;
 	RANGE_PX curRange;
 	vector<string> ttstat;
+	void ShowSpectrum(CAxis *pax, CAxis *paxBase);
 public:
 	RANGE_TP selRange;
 	void OnPaint();
@@ -157,6 +180,7 @@ public:
 	RANGE_ID GetIndSelected(CAxis *pax);
 	void HandleLostFocus(UINT umsg, LPARAM lParam=0);
 	void ShowStatusSelectionOfRange(CAxis *pax, const char *swich=NULL);
+	void ShowStatusBar(SHOWSTATUS status=FULL, const char* msg=NULL);
 	int GetSignalofInterest(int code, CSignal &signal, bool chainless);
 	void GetSignalIndicesofInterest(int code, int & ind1, int &ind2);
 	int GetCSignalsInRange(int code, CAxis *pax, CSignals &sig, bool makechainless);

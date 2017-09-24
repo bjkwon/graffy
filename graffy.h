@@ -92,6 +92,7 @@ public:
 	COLORREF color;
 	CPosition pos;
 	CGobj *hPar;
+	CGobj *hChild; // this is a linked list, different from vector child, used only for special purpose (for example, to keep a direct genealogy line)
 	CWndDlg *m_dlg;
 	bool visible;
 	graffytype type;
@@ -176,6 +177,7 @@ public:
 //	vector<CPatch*> m_pat;
 
 	GRAPHY_EXPORT CAxis& operator=(const CAxis& rhs);
+	GRAPHY_EXPORT CAxis *create_linked_axis(CPosition pos);
 	void GetCoordinate(POINT* pt, double& x, double& y);
 	GRAPHY_EXPORT CLine * plot(int length, double *y, COLORREF col=0xff0000, char cymbol=0, LineStyle ls=LineStyle_solid);
 	GRAPHY_EXPORT CLine * plot(int length, double *x, double *y, COLORREF col=0xff0000, char cymbol=0, LineStyle ls=LineStyle_solid);

@@ -85,6 +85,15 @@ CAxis::~CAxis()
 	}
 }
 
+GRAPHY_EXPORT CAxis *CAxis::create_linked_axis(CPosition pos)
+{
+	CAxis *in = new CAxis(m_dlg, this);
+	in->setPos(pos);
+	hChild = in;
+	in->hPar = this;
+	return in;
+} 
+
 GRAPHY_EXPORT CAxis& CAxis::operator=(const CAxis& rhs)
 {
 	if (this != &rhs) 
@@ -322,7 +331,7 @@ GRAPHY_EXPORT CLine * CAxis::plot(double *xdata, CSignal &ydata, COLORREF col, c
 	in->lineStyle = ls;
 	m_ln.push_back(in);
 
-	xlimFull[0] = xlim[0]; xlimFull[1] = xlim[1]; 
+	xlimFull[0] = 0; xlimFull[1] = xlim[1]; 
 	RECT rt;
 	GetClientRect(m_dlg->hDlg, &rt);
 	int width(rt.right-rt.left);
@@ -333,12 +342,16 @@ GRAPHY_EXPORT CLine * CAxis::plot(double *xdata, CSignal &ydata, COLORREF col, c
 		ylim[0]=-1, ylim[1]=1;
 	else	
 	{
-		ylim[0] = getMin(ydata.nSamples, ydata.buf);
-		ylim[1] = getMax(ydata.nSamples, ydata.buf);	
-		if (ylim[0]==ylim[1])
+		if (ydata.bufBlockSize==1) ylim[0]=-.2, ylim[1]=1.2;
+		else
 		{
-			ylim[0] -= 1.;
-			ylim[1] += 1.;
+			ylim[0] = getMin(ydata.nSamples, ydata.buf);
+			ylim[1] = getMax(ydata.nSamples, ydata.buf);	
+			if (ylim[0]==ylim[1])
+			{
+				ylim[0] -= 1.;
+				ylim[1] += 1.;
+			}
 		}
 		//double diff = ylim[1]-ylim[0];
 		//ylim[0] -= diff/10; 
