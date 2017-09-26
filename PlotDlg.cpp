@@ -543,14 +543,14 @@ void CPlotDlg::OnPaint()
 			else
 				k++;
 		}
-		//CAxis *paxx(gcf.ax.front()); 
-		//if (LRrange(&paxx->rcAx, playLoc, 'x')==0) 
-		//{
-		//	dc.CreatePen(PS_SOLID, 1, RGB(204,77,0));
-		//	dc.MoveTo(playLoc, gcf.ax.front()->axRect.bottom);
-		//	dc.LineTo(playLoc, gcf.ax.front()->axRect.top); 
-		//	setpbprogln(playLoc);
-		//}
+		CAxis *paxx(gcf.ax.front()); 
+		if (LRrange(&paxx->rcAx, playLoc, 'x')==0) 
+		{
+			dc.CreatePen(PS_SOLID, 1, RGB(204,77,0));
+			dc.MoveTo(playLoc, gcf.ax.front()->axRect.bottom);
+			dc.LineTo(playLoc, gcf.ax.front()->axRect.top); 
+			setpbprogln(playLoc);
+		}
 
 		if (pax0->m_ln.size()>0 || (gcf.ax.size()>1 && gcf.ax[1]->m_ln.size()>0) )
 		{
@@ -1790,8 +1790,7 @@ void CPlotDlg::ShowStatusBar(SHOWSTATUS status, const char* msg)
 //	sprintf(buf, format, pax0->xlim[0]);
 //	sprintf(buf2, format, pax0->xlim[1]);
 
-	if (sbinfo.vax.size()==0)
-		{MessageBox("sbinfo.vax.size()==0"); return;}
+	if (sbinfo.vax.size()==0)  return;
 	
 	sbinfo.xBegin = sbinfo.vax[0]->xlim[0];
 	sbinfo.xEnd = sbinfo.vax[0]->xlim[1];
