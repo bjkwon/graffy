@@ -2,6 +2,7 @@
 // Microsoft Visual C++ generated include file.
 // Used by graffy.rc
 //
+#define IDI_ICON1                       101
 #define IDD_PLOT                        107
 #define IDR_POPMENU                     1000
 #define IDR_ACCELERATOR1                1001

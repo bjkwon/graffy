@@ -23,8 +23,6 @@ void splitevenindices(int ** out, int nTotals, int nGroups);
 
 extern HWND hPlotDlgCurrent;
 
-
-
 FILE *fp;
 
 #define RMSDB(BUF,FORMAT1,FORMAT2,X) { double rms;	if ((rms=X)==-1.*std::numeric_limits<double>::infinity()) strcpy(BUF, FORMAT1); else sprintf(BUF, FORMAT2, rms); }
@@ -69,6 +67,7 @@ CPlotDlg::CPlotDlg(HINSTANCE hInstance, CGobj *hPar)
 	ttstat.push_back("Frequency");
 	sbinfo.initialshow = false;
 	sbinfo.xSelBegin = sbinfo.xSelEnd = 0.;
+
 }
 
 CPlotDlg::~CPlotDlg()
@@ -130,6 +129,7 @@ BOOL CPlotDlg::OnInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 	::SendMessage(hTTscript, TTM_ACTIVATE, TRUE, 0);	
 	::SendMessage(hTTscript, TTM_SETMAXTIPWIDTH, 0, 400);
 	//These two functions are typically called in pair--so sigproc and graffy can communicate with each other for GUI updates, etc.
+	SetClassLongPtr (hwnd, GCLP_HICON, (LONG)(LONG_PTR)LoadImage(hInst, MAKEINTRESOURCE(IDI_ICON1), IMAGE_ICON, 0, 0, 0));
 	return TRUE;
 }
 
@@ -420,7 +420,6 @@ void CPlotDlg::OnPaint()
 	GetClientRect(hDlg, &clientRt);
 	if (clientRt.Height()<15) { EndPaint(hDlg, &ps); return; }
 	dc.SolidFill(gcf.color, clientRt);
-	static int count(0);
 	CRect rt;
 	GetClientRect(hDlg, &rt);
 	if (gcf.ax.size()>0)
@@ -579,11 +578,6 @@ void CPlotDlg::OnPaint()
 			::SendMessage(hTTscript, TTM_ADDTOOL, 0, (LPARAM) (LPTOOLINFO) &ti_script);
 			::SendMessage(hTTscript, TTM_UPDATETIPTEXT, 0,  (LPARAM) (LPTOOLINFO) &ti_script);
 		}
-	}
-	if (count++==50)
-	{
-		pt.x++;
-		pt.x--;
 	}
 	EndPaint(hDlg, &ps);
 	if (!sbinfo.initialshow) {sbinfo.initialshow=true; ShowStatusBar();}
@@ -759,7 +753,7 @@ void CPlotDlg::OnSize(UINT nType, int cx, int cy)
 		::SendMessage (hStatusbar, SB_SETPARTS, 12, (LPARAM)sbarWidthArray);
 		SetHWND_GRAFFY(hDlg);
 #ifndef NO_PLAYSND
-		SetHWND_SIGPROC(GetParent(hDlg));
+		SetHWND_WAVPLAY(GetParent(hDlg));
 #endif // NO_PLAYSND
 	}
 	else
@@ -1275,6 +1269,7 @@ void CPlotDlg::OnMenu(UINT nID)
 			if (paxFFT = (CAxis*)cax->hChild) ShowSpectrum(paxFFT, cax);
 		}
 		ShowStatusBar();
+		InvalidateRect(NULL);
 		return;
 
 	case IDM_ZOOM_IN:
@@ -1769,11 +1764,12 @@ void CPlotDlg::ShowStatusBar(SHOWSTATUS status, const char* msg)
 	CSignals _sig;
 	bool b;
 	size_t nAxes = sbinfo.vax.size();
-	for (size_t k=0;k<nAxes; k++)
+	for (vector<CAxis *>::iterator it = sbinfo.vax.begin(); it!=sbinfo.vax.end(); it++)
+//	for (size_t k=0;k<nAxes; k++)
 	{
 		if (buf[0]) sprintf(rmstext, "(L)%s", buf);
 		b = curRange!=NO_SELECTION;
-		if (GetCSignalsInRange(b, sbinfo.vax[k], _sig, 0)) // if no selection, get sig in the screen viewing range; otherwise, _sig is in the selected range
+		if (GetCSignalsInRange(b, *it, _sig, 0)) // if no selection, get sig in the screen viewing range; otherwise, _sig is in the selected range
 		{
 			if (_sig.IsLogical())	strcpy(buf, "logical");
 			else if (_sig.GetType()==CSIG_AUDIO)
@@ -1782,7 +1778,7 @@ void CPlotDlg::ShowStatusBar(SHOWSTATUS status, const char* msg)
 		}
 	}
 	if (!rmstext[0])	strcpy(rmstext, buf);
-	strcat(rmstext, " RMS");
+	if (_sig.GetType()==CSIG_AUDIO) strcat(rmstext, " RMS");
 	::SendMessage (hStatusbar, SB_SETTEXT, 6, (LPARAM)rmstext);
 
 	//From OnPaint()---maybe use predefined format for non-audio???
@@ -1790,7 +1786,7 @@ void CPlotDlg::ShowStatusBar(SHOWSTATUS status, const char* msg)
 //	sprintf(buf, format, pax0->xlim[0]);
 //	sprintf(buf2, format, pax0->xlim[1]);
 
-	if (sbinfo.vax.size()==0)  return;
+	if (sbinfo.vax.empty())  return;
 	
 	sbinfo.xBegin = sbinfo.vax[0]->xlim[0];
 	sbinfo.xEnd = sbinfo.vax[0]->xlim[1];
